@@ -1,0 +1,970 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monolog — Type a thought. AI figures out the rest.</title>
+<meta name="description" content="Monolog is a simple notes and reminders app. Type one thought, and Monolog figures out whether it's a note to keep or a reminder to fire at the right time. No categories. No sign-up. Just type.">
+<style>
+/* ============================================================
+   MONOLOG — LANDING PAGE
+   Same design universe as ANALYSIS.html:
+   pure #000 / #FFF / #555, hairline #1d1d1d borders,
+   monospace eyebrows, scroll reveals. Pure monochrome —
+   no accent color. The only filled element is the CTA.
+   ============================================================ */
+:root{
+  --black:#000000;
+  --white:#ffffff;
+  --gray:#555555;
+  --gray-bright:#8a8a8a;
+  --gray-faint:#3a3a3a;
+  --card:#080808;
+  --card-hi:#0e0e0e;
+  --hairline:#1d1d1d;
+  --hairline-hi:#2c2c2c;
+
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+
+  --maxw:1120px;
+  --pad-x:clamp(20px,5vw,64px);
+  --r:14px;
+  --r-sm:9px;
+
+  --ease:cubic-bezier(.22,.61,.36,1);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *{animation-duration:.001ms!important;transition-duration:.001ms!important}
+}
+
+body{
+  margin:0;
+  background:var(--black);
+  color:var(--white);
+  font-family:var(--sans);
+  font-size:17px;
+  line-height:1.7;
+  letter-spacing:.005em;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+
+/* faint atmosphere: subtle vignette (no images) */
+body::before{
+  content:"";
+  position:fixed;inset:0;
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(255,255,255,.045), transparent 60%),
+    linear-gradient(transparent 0 0);
+  pointer-events:none;z-index:0;
+}
+
+a{color:inherit;text-decoration:none}
+::selection{background:var(--white);color:var(--black)}
+
+/* ---------- top scroll progress (pure white, no accent) ---------- */
+#progress{
+  position:fixed;top:0;left:0;height:2px;width:0%;
+  background:var(--white);
+  z-index:100;transition:width .1s linear;
+}
+
+/* ---------- layout ---------- */
+.wrap{position:relative;z-index:1;max-width:var(--maxw);margin:0 auto;padding:0 var(--pad-x)}
+
+.section{
+  position:relative;z-index:1;
+  padding:clamp(70px,11vh,130px) 0;
+  border-top:1px solid var(--hairline);
+}
+.section:first-of-type{border-top:none}
+
+[data-reveal]{
+  opacity:0;transform:translateY(26px);
+  transition:opacity .8s var(--ease),transform .8s var(--ease);
+  will-change:opacity,transform;
+}
+[data-reveal].is-visible{opacity:1;transform:none}
+
+/* stagger children reveals */
+[data-stagger] > *{opacity:0;transform:translateY(22px);transition:opacity .7s var(--ease),transform .7s var(--ease)}
+[data-stagger].is-visible > *{opacity:1;transform:none}
+[data-stagger].is-visible > *:nth-child(1){transition-delay:.04s}
+[data-stagger].is-visible > *:nth-child(2){transition-delay:.10s}
+[data-stagger].is-visible > *:nth-child(3){transition-delay:.16s}
+[data-stagger].is-visible > *:nth-child(4){transition-delay:.22s}
+[data-stagger].is-visible > *:nth-child(5){transition-delay:.28s}
+[data-stagger].is-visible > *:nth-child(6){transition-delay:.34s}
+[data-stagger].is-visible > *:nth-child(7){transition-delay:.40s}
+[data-stagger].is-visible > *:nth-child(8){transition-delay:.46s}
+
+/* ---------- typography ---------- */
+.eyebrow{
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.32em;
+  text-transform:uppercase;color:var(--gray-bright);
+  display:inline-flex;align-items:center;gap:.7em;margin:0 0 18px;
+}
+.eyebrow::before{content:"";width:26px;height:1px;background:var(--gray-faint);display:inline-block}
+h2.title{
+  font-family:var(--mono);font-weight:600;
+  font-size:clamp(1.7rem,4.4vw,2.9rem);
+  line-height:1.08;letter-spacing:-.02em;margin:0 0 .5em;
+}
+.title .dim{color:var(--gray)}
+.lead{font-size:clamp(1.02rem,2vw,1.18rem);color:var(--gray-bright);max-width:62ch;margin:0 0 8px}
+p{margin:0 0 1.1em}
+strong{color:#fff;font-weight:600}
+.dim{color:var(--gray-bright)}
+.mono{font-family:var(--mono)}
+
+/* ============================================================
+   HERO
+   ============================================================ */
+.hero{
+  position:relative;z-index:1;
+  min-height:100svh;display:flex;flex-direction:column;justify-content:center;
+  padding:clamp(90px,16vh,150px) 0 70px;
+}
+.hero .eyebrow{margin-bottom:28px}
+.hero h1{
+  font-family:var(--mono);font-weight:600;
+  font-size:clamp(2.6rem,11vw,9.5rem);
+  line-height:.9;letter-spacing:-.045em;margin:0;
+}
+.hero h1 .stroke{
+  -webkit-text-stroke:1.5px var(--white);color:transparent;
+}
+.hero .tagline{
+  font-family:var(--mono);font-size:clamp(1.05rem,2.6vw,1.55rem);
+  letter-spacing:-.01em;color:var(--white);max-width:24ch;margin:26px 0 0;line-height:1.35;
+}
+.hero .tagline .dim{color:var(--gray-bright)}
+.hero .micro{
+  font-family:var(--mono);font-size:.74rem;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--gray);margin:18px 0 0;
+}
+
+/* CTAs */
+.cta-row{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:38px}
+.btn{
+  font-family:var(--mono);font-size:.76rem;letter-spacing:.12em;text-transform:uppercase;
+  display:inline-flex;align-items:center;gap:.6em;padding:1.05em 1.7em;border-radius:100px;
+  border:1px solid transparent;cursor:pointer;
+  transition:transform .25s var(--ease),opacity .25s var(--ease),background .25s var(--ease),border-color .25s var(--ease),color .25s var(--ease);
+}
+.btn-primary{background:var(--white);color:var(--black)}
+.btn-primary:hover{transform:translateY(-2px);opacity:.9}
+.btn-primary:active{transform:translateY(0)}
+.btn-ghost{color:var(--gray-bright);border-color:var(--hairline-hi);background:transparent}
+.btn-ghost:hover{color:var(--white);border-color:var(--gray);background:var(--card-hi)}
+.btn-ghost:active{transform:translateY(1px)}
+
+/* ============================================================
+   PITCH — 3 pillars
+   ============================================================ */
+.grid{display:grid;gap:16px}
+.cols-3{grid-template-columns:repeat(3,1fr)}
+.cols-2{grid-template-columns:repeat(2,1fr)}
+.card{
+  border:1px solid var(--hairline);border-radius:var(--r);background:var(--card);
+  padding:clamp(24px,3vw,32px);
+  transition:transform .3s var(--ease),border-color .3s var(--ease),box-shadow .3s var(--ease);
+}
+.card:hover{transform:translateY(-3px);border-color:var(--hairline-hi);box-shadow:0 14px 40px -22px rgba(0,0,0,.9)}
+.card .p-eyebrow{
+  font-family:var(--mono);font-size:.66rem;letter-spacing:.24em;text-transform:uppercase;
+  color:var(--gray-bright);margin:0 0 18px;display:flex;align-items:center;gap:.7em;
+}
+.card .p-eyebrow::before{content:"";width:20px;height:1px;background:var(--gray-faint)}
+.card h3{font-family:var(--mono);font-weight:600;font-size:1.18rem;margin:0 0 12px;letter-spacing:-.01em}
+.card p{margin:0;color:var(--gray-bright);font-size:.96rem;line-height:1.6}
+
+/* ============================================================
+   HOW IT WORKS — numbered vertical flow
+   ============================================================ */
+.flow{list-style:none;margin:0;padding:0}
+.step{
+  display:grid;grid-template-columns:64px 1fr;gap:clamp(18px,3vw,28px);
+  padding:0 0 clamp(34px,5vh,52px);position:relative;
+}
+.step:last-child{padding-bottom:0}
+.step:not(:last-child)::after{
+  content:"";position:absolute;left:31px;top:64px;bottom:0;width:1px;background:var(--hairline);
+}
+.step-num{
+  width:64px;height:64px;border:1px solid var(--hairline-hi);border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--mono);font-weight:600;font-size:1.02rem;color:var(--white);
+  background:var(--card);position:relative;z-index:1;
+  transition:border-color .3s var(--ease),transform .3s var(--ease);
+}
+.step:hover .step-num{border-color:var(--gray);transform:translateY(-2px)}
+.step-body{padding-top:6px}
+.step-body h3{font-family:var(--mono);font-size:1.12rem;font-weight:600;margin:0 0 8px;letter-spacing:-.01em}
+.step-body p{margin:0;color:var(--gray-bright);font-size:1rem}
+.step-body .ex{font-family:var(--mono);font-size:.82rem;color:var(--gray);margin-top:10px;display:block}
+
+/* ============================================================
+   SEE IT — phone mockups (pure CSS, faithful to App.tsx)
+   ============================================================ */
+.app-show{
+  margin-top:36px;
+  display:grid;grid-template-columns:repeat(3,1fr);
+  gap:clamp(20px,3vw,40px);justify-items:center;align-items:start;
+}
+.phone-col{display:flex;flex-direction:column;align-items:center;gap:16px}
+.phone-cap{
+  font-family:var(--mono);font-size:.66rem;letter-spacing:.24em;
+  text-transform:uppercase;color:var(--gray-bright);
+}
+/* phone shell */
+.phone{
+  position:relative;width:clamp(232px,21vw,286px);aspect-ratio:9/19.5;
+  background:var(--black);
+  border:1px solid #2c2c2c;border-radius:clamp(26px,3vw,38px);
+  box-shadow:0 38px 80px -34px rgba(0,0,0,.95),0 0 0 1px rgba(255,255,255,.015) inset;
+  overflow:hidden;display:flex;flex-direction:column;
+}
+.phone .island{
+  position:absolute;top:9px;left:50%;transform:translateX(-50%);
+  width:24%;max-width:66px;height:16px;background:#0b0b0b;border-radius:10px;z-index:6;
+}
+.app-screen{flex:1;display:flex;flex-direction:column;overflow:hidden;z-index:1;position:relative}
+/* shared app header */
+.app-h{display:flex;align-items:center;justify-content:space-between;padding:30px 16px 9px}
+.app-h .t{font-family:var(--sans);color:#fff;font-size:10px;font-weight:400;letter-spacing:2px;text-transform:uppercase}
+.app-send{width:24px;height:24px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.app-send svg{color:#000}
+/* write pad */
+.app-pad{flex:1;padding:6px 16px 0;overflow:hidden}
+.app-write-text{font-family:var(--sans);color:#fff;font-size:15px;line-height:23px;font-weight:300;white-space:pre-wrap}
+.app-write-text .ph{color:#555}
+.app-caret{display:inline-block;width:1.5px;height:1em;background:#fff;transform:translateY(.14em);animation:blink 1.05s steps(1) infinite;vertical-align:middle}
+/* reminders / notes list */
+.app-list{flex:1;padding:0 16px;overflow:hidden}
+.app-sec-title{font-family:var(--sans);color:#fff;font-size:10px;font-weight:400;letter-spacing:2px;text-transform:uppercase;margin:15px 0 8px}
+.app-row{display:flex;flex-direction:column;padding:9px 0;border-bottom:1px solid #222}
+.app-row .rt{font-family:var(--sans);color:#fff;font-size:11.5px;font-weight:400}
+.app-row .rm{font-family:var(--sans);color:#555;font-size:8.5px;margin-top:2px}
+.app-note{display:flex;align-items:center;padding:8px 0;border-bottom:1px solid #222}
+.app-note .nb{flex:1;min-width:0}
+.app-note .nt{font-family:var(--sans);color:#fff;font-size:10px;font-weight:400}
+.app-note .nr{font-family:var(--sans);color:#555;font-size:8.5px;margin-top:2px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical}
+.app-note .nd{font-family:var(--sans);color:#555;font-size:8px;margin-left:8px;flex:0 0 auto}
+/* calendar */
+.app-cal-nav{display:flex;align-items:center;justify-content:space-between;padding:10px 16px}
+.app-cal-nav .ml{font-family:var(--sans);color:#fff;font-size:12px;font-weight:400}
+.app-dow{display:flex;padding:0 12px}
+.app-dow .d{flex:1;text-align:center;padding:3px 0;font-family:var(--sans);color:#555;font-size:8px;letter-spacing:.5px}
+.app-grid{display:flex;flex-wrap:wrap;padding:0 12px}
+.app-cell{width:14.28%;aspect-ratio:1;padding:1px}
+.app-cell .inner{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;border-radius:6px}
+.app-cell .inner.sel{background:#222}
+.app-cell .num{font-family:var(--sans);color:#fff;font-size:10px;font-weight:300;line-height:1}
+.app-cell .num.sel{font-weight:600}
+.app-cell .num.today{font-weight:700;font-size:11px}
+.app-cell .dot{width:3px;height:3px;border-radius:50%;background:#fff;margin-top:2px;flex:0 0 auto}
+.app-cal-sec{padding:12px 16px 0}
+.app-cal-lab{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.app-cal-lab .lt{font-family:var(--sans);color:#555;font-size:8px;letter-spacing:1.5px;text-transform:uppercase}
+.app-ev{display:flex;align-items:center;gap:7px;padding:5px 0}
+.app-ev .et{font-family:var(--sans);color:#fff;font-size:10px}
+.app-ev .em{font-family:var(--sans);color:#555;font-size:8px;margin-top:1px}
+/* bottom nav */
+.app-nav{margin-top:auto;display:flex;border-top:1px solid #fff;padding:9px 0 16px}
+.app-nav .n{flex:1;display:flex;align-items:center;justify-content:center;color:#555}
+.app-nav .n.on{color:#fff}
+.app-nav .n svg{display:block}
+@media (max-width:880px){
+  .app-show{
+    display:flex;flex-wrap:nowrap;overflow-x:auto;
+    scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;
+    overscroll-behavior-x:contain;
+    grid-template-columns:none;
+    margin-right:calc(-1*var(--pad-x));margin-left:calc(-1*var(--pad-x));
+    padding:0 var(--pad-x) 8px;
+    scrollbar-width:thin;
+  }
+  .phone-col{scroll-snap-align:center;flex:0 0 auto}
+  .phone-col:first-child{margin-left:auto}
+  .phone-col:last-child{margin-right:auto}
+}
+
+/* ============================================================
+   FEATURES grid
+   ============================================================ */
+.feat-grid{
+  display:grid;grid-template-columns:repeat(2,1fr);gap:1px;
+  background:var(--hairline);border:1px solid var(--hairline);border-radius:var(--r);overflow:hidden;
+}
+.feat{
+  background:var(--card);padding:20px 24px;display:flex;flex-direction:column;gap:7px;
+  transition:background .3s var(--ease);
+}
+.feat:hover{background:var(--card-hi)}
+.feat .fk{font-family:var(--mono);font-size:.68rem;letter-spacing:.2em;text-transform:uppercase;color:var(--white)}
+.feat .fv{font-family:var(--mono);font-size:.78rem;color:var(--gray-bright);line-height:1.55}
+
+/* ============================================================
+   PHILOSOPHY — manifesto
+   ============================================================ */
+.manifesto{
+  margin:0;padding:clamp(36px,6vw,72px) clamp(8px,3vw,40px);
+  border:1px solid var(--hairline);border-radius:var(--r);background:var(--card);
+  position:relative;overflow:hidden;
+}
+.manifesto::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--white);opacity:.85}
+.manifesto p{
+  font-family:var(--mono);font-weight:500;
+  font-size:clamp(1.3rem,3.4vw,2.1rem);line-height:1.4;letter-spacing:-.015em;
+  color:var(--gray-bright);margin:0;max-width:30ch;
+}
+.manifesto p .hi{color:var(--white)}
+.manifesto .attr{
+  font-family:var(--mono);font-size:.66rem;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--gray);margin:26px 0 0;
+}
+
+/* ============================================================
+   PRICING
+   ============================================================ */
+.price-card{
+  display:flex;flex-direction:column;
+  border:1px solid var(--hairline);border-radius:var(--r);background:var(--card);
+  padding:clamp(26px,3.4vw,38px);
+  transition:transform .3s var(--ease),border-color .3s var(--ease),box-shadow .3s var(--ease);
+}
+.price-card:hover{transform:translateY(-3px);box-shadow:0 14px 40px -22px rgba(0,0,0,.9)}
+.price-card.is-featured{border-color:var(--white)}
+.price-card.is-featured:hover{border-color:var(--white)}
+.plan-name{
+  font-family:var(--mono);font-size:.66rem;letter-spacing:.28em;text-transform:uppercase;
+  color:var(--gray-bright);margin:0 0 22px;display:flex;align-items:center;gap:.7em;
+}
+.plan-name::before{content:"";width:20px;height:1px;background:var(--gray-faint)}
+.price-block{margin:0 0 18px}
+.price{
+  font-family:var(--mono);font-weight:600;
+  font-size:clamp(2.8rem,6.5vw,4.2rem);
+  line-height:1;letter-spacing:-.035em;color:var(--white);margin:0;
+}
+.price-period{
+  font-family:var(--mono);font-size:.74rem;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--gray);margin:12px 0 0;
+}
+.benefit{
+  font-family:var(--mono);font-size:.86rem;color:var(--gray-bright);line-height:1.55;
+  margin:0 0 28px;
+}
+.price-cta{margin-top:auto}
+.price-cta .btn{width:100%;justify-content:center}
+.price-foot{
+  margin:30px auto 0;max-width:48ch;text-align:center;
+  border-top:1px solid var(--hairline);padding-top:18px;
+  font-family:var(--mono);font-size:.66rem;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--gray);
+}
+
+/* ============================================================
+   CTA / FOOTER
+   ============================================================ */
+.cta{
+  text-align:center;padding:clamp(30px,5vw,60px) 0;
+}
+.cta h2{
+  font-family:var(--mono);font-weight:600;
+  font-size:clamp(2.2rem,7vw,4.6rem);line-height:.95;letter-spacing:-.035em;margin:0;
+}
+.cta h2 .stroke{-webkit-text-stroke:1.5px var(--white);color:transparent}
+.cta .sub{
+  font-family:var(--mono);font-size:clamp(.9rem,2vw,1.1rem);letter-spacing:.04em;
+  color:var(--gray-bright);margin:22px 0 0;
+}
+.cta .actions{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;align-items:center;margin-top:38px}
+.cta .note{font-family:var(--mono);font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--gray)}
+
+.footer{
+  border-top:1px solid var(--hairline);padding:46px 0 60px;
+  font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;color:var(--gray);
+  display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;
+}
+.footer a{transition:color .25s var(--ease)}
+.footer a:hover{color:var(--white)}
+
+/* ============================================================
+   RESPONSIVE
+   Breakpoints: 880 / 640 relax grids · 480 primary mobile
+   · 400 compact phones · 360 tiny phones
+   Mobile-first feel: tight hero, stacked phones, big targets.
+   ============================================================ */
+@media (max-width:880px){
+  .cols-3{grid-template-columns:1fr}
+  .feat-grid{grid-template-columns:1fr}
+}
+@media (max-width:640px){
+  .cols-2{grid-template-columns:1fr}
+}
+
+/* ---------- MOBILE (primary target: 375px) ---------- */
+@media (max-width:480px){
+  body{font-size:16px}
+  :root{--pad-x:22px}
+
+  /* layout rhythm — tight sections, real breathing room.
+     note: var(--pad-x) is needed here because .section's base
+     styles override .wrap's horizontal padding with 0.          */
+  .section{padding:clamp(52px,9vh,76px) var(--pad-x)}
+
+  /* every button is a full-width, easy-to-tap target (>=44px) */
+  .btn{
+    width:100%;justify-content:center;
+    font-size:.74rem;padding:1em 1.5em;min-height:48px;
+  }
+
+  /* ---- HERO: compact + intentional, not full viewport height ---- */
+  .hero{
+    min-height:auto;
+    padding:clamp(82px,14vh,112px) var(--pad-x) clamp(40px,7vh,64px);
+  }
+  .hero .eyebrow{margin-bottom:22px}
+  .hero h1{font-size:clamp(2.8rem,16vw,4rem);letter-spacing:-.05em}
+  .hero .tagline{
+    font-size:clamp(1rem,4.2vw,1.15rem);
+    margin-top:22px;max-width:30ch;line-height:1.4;
+  }
+  .hero .micro{font-size:.66rem;letter-spacing:.18em;margin-top:16px}
+  .hero .cta-row{
+    flex-direction:column;align-items:stretch;
+    gap:10px;margin-top:32px;
+  }
+
+  /* ---- TITLES / LEAD ---- */
+  h2.title{font-size:clamp(1.55rem,7vw,2rem);line-height:1.1}
+  .lead{font-size:1rem;line-height:1.6}
+
+  /* ---- PITCH CARDS: single column, readable ---- */
+  .grid{gap:12px}
+  .card{padding:22px 20px}
+  .card h3{font-size:1.08rem}
+  .card p{font-size:.95rem;line-height:1.6}
+
+  /* ---- SEE IT — phones STACKED VERTICALLY, big enough to read.
+     Overrides the horizontal carousel set at 880px. ---- */
+  .app-show{
+    display:grid;grid-template-columns:1fr;justify-items:center;
+    gap:36px;margin:0;padding:0;overflow:visible;
+  }
+  .phone-col,
+  .phone-col:first-child,
+  .phone-col:last-child{margin:0;flex:initial;scroll-snap-align:none}
+  .phone{
+    width:min(300px,86vw);aspect-ratio:9/19.5;
+    border-radius:clamp(28px,6vw,36px);
+  }
+  .phone-cap{font-size:.68rem}
+
+  /* ---- HOW IT WORKS ---- */
+  .step{
+    grid-template-columns:48px 1fr;gap:16px;
+    padding-bottom:clamp(28px,5vh,40px);
+  }
+  .step-num{width:48px;height:48px;font-size:.86rem}
+  .step:not(:last-child)::after{left:23px;top:48px}
+  .step-body h3{font-size:1.04rem}
+  .step-body p{font-size:.95rem;line-height:1.6}
+  .step-body .ex{font-size:.76rem;overflow-wrap:anywhere;word-break:break-word}
+
+  /* ---- FEATURES: single column ---- */
+  .feat{padding:18px 20px}
+  .feat .fk{font-size:.66rem}
+  .feat .fv{font-size:.78rem;line-height:1.55}
+
+  /* ---- MANIFESTO: typographic scale for mobile ---- */
+  .manifesto{padding:clamp(28px,6vw,40px) clamp(18px,5vw,26px)}
+  .manifesto p{
+    font-size:clamp(1.18rem,5.2vw,1.4rem);
+    line-height:1.4;max-width:none;
+  }
+  .manifesto .attr{font-size:.64rem;margin-top:22px}
+
+  /* ---- PRICING: single column, clear hierarchy ---- */
+  .price-card{padding:26px 22px}
+  .price{font-size:clamp(2.6rem,13vw,3.2rem)}
+  .price-period{font-size:.7rem;margin-top:10px}
+  .benefit{font-size:.82rem;margin-bottom:24px}
+  .price-foot{font-size:.62rem;padding-top:16px;margin-top:24px}
+
+  /* ---- CTA: stacked full-width ---- */
+  .cta{padding:clamp(28px,5vw,44px) 0}
+  .cta h2{font-size:clamp(1.9rem,9vw,2.4rem);line-height:.98}
+  .cta .sub{font-size:.86rem;margin-top:18px}
+  .cta .actions{
+    flex-direction:column;align-items:stretch;gap:10px;margin-top:30px;
+  }
+  .cta .note{font-size:.64rem}
+
+  /* ---- FOOTER: stacked ---- */
+  .footer{
+    flex-direction:column;align-items:flex-start;
+    gap:10px;font-size:.68rem;padding:38px var(--pad-x) 48px;
+  }
+}
+
+/* ---------- COMPACT PHONES (<=400px) ---------- */
+@media (max-width:400px){
+  :root{--pad-x:18px}
+  body{font-size:15.5px}
+
+  .hero{padding:clamp(70px,12vh,96px) var(--pad-x) clamp(36px,6vh,52px)}
+  .hero h1{font-size:clamp(2.3rem,15vw,2.9rem)}
+  .hero .tagline{font-size:clamp(.95rem,4vw,1.05rem);margin-top:18px}
+  .hero .micro{font-size:.62rem;letter-spacing:.14em}
+
+  .section{padding:clamp(44px,8vh,64px) var(--pad-x)}
+  h2.title{font-size:clamp(1.4rem,6.5vw,1.7rem)}
+
+  /* phones slightly smaller so the in-screen UI stays proportional */
+  .phone{width:min(270px,88vw);border-radius:clamp(24px,5.5vw,30px)}
+  .app-h{padding:22px 13px 7px}
+  .app-h .t{font-size:9px;letter-spacing:1.6px}
+  .app-write-text{font-size:14px;line-height:21px}
+  .app-nav{padding:7px 0 13px}
+
+  .card{padding:20px 18px}
+  .card h3{font-size:1.02rem}
+  .feat{padding:16px 18px}
+
+  .price-card{padding:22px 18px}
+  .price{font-size:clamp(2.3rem,12vw,2.8rem)}
+  .benefit{font-size:.78rem}
+
+  .cta h2{font-size:clamp(1.7rem,8.5vw,2.1rem)}
+  .step-body h3{font-size:1rem}
+  .step-body p{font-size:.9rem}
+  .manifesto p{font-size:clamp(1.08rem,5vw,1.2rem)}
+}
+
+/* ---------- TINY PHONES (<=360px) — squeeze, stay readable ---------- */
+@media (max-width:360px){
+  :root{--pad-x:16px}
+  body{font-size:15px;line-height:1.65}
+
+  .hero{padding:clamp(60px,10vh,80px) var(--pad-x) clamp(30px,5vh,44px)}
+  .hero h1{font-size:clamp(2rem,13vw,2.4rem)}
+  .hero .tagline{font-size:clamp(.88rem,4vw,.98rem);margin-top:16px}
+  .hero .cta-row{margin-top:26px;gap:8px}
+
+  .btn{font-size:.68rem;min-height:46px}
+
+  .phone{width:min(245px,90vw);border-radius:clamp(20px,5vw,26px)}
+  .app-h{padding:18px 11px 5px}
+  .app-h .t{font-size:8px;letter-spacing:1.4px}
+  .app-write-text{font-size:12.5px;line-height:19px}
+  .app-row .rt{font-size:11px}
+  .app-row .rm{font-size:8px}
+  .app-note .nt{font-size:9.5px}
+  .app-cell .num{font-size:9px}
+  .app-ev .et{font-size:9.5px}
+
+  .card{padding:18px 16px;border-radius:12px}
+  .card h3{font-size:.98rem}
+  .feat{padding:14px 14px;gap:6px}
+  .feat .fv{font-size:.72rem}
+
+  .manifesto p{font-size:clamp(1rem,4.8vw,1.1rem)}
+
+  .price-card{padding:20px 16px}
+  .price{font-size:clamp(2rem,11vw,2.4rem)}
+
+  .step{grid-template-columns:40px 1fr;gap:13px}
+  .step-num{width:40px;height:40px;font-size:.76rem}
+  .step:not(:last-child)::after{left:19px;top:40px}
+  .step-body{padding-top:2px}
+  .step-body h3{font-size:.96rem}
+
+  .cta h2{font-size:clamp(1.55rem,8vw,1.95rem)}
+  .cta .sub{font-size:.8rem}
+  .footer{font-size:.64rem}
+}
+
+/* ============================================================
+   PRINT
+   ============================================================ */
+@media print{
+  body{background:#fff;color:#000;font-size:11pt}
+  body::before,body::after,#progress{display:none}
+  .wrap{max-width:100%}
+  .section{break-inside:avoid;border-color:#ccc;padding:18px 0}
+  .card,.feat,.demo,.manifesto,.verdict,.price-card{break-inside:avoid}
+  [data-reveal],[data-stagger] > *{opacity:1!important;transform:none!important}
+  .card,.feat,.demo,.manifesto,.price-card{background:#fff!important;border-color:#ccc!important}
+  .hero h1 .stroke,.cta h2 .stroke{-webkit-text-stroke-color:#000}
+  .hero{min-height:auto}
+  .verdict-pill,.step-num{border-color:#000!important;color:#000!important}
+  a{color:#000}
+  .dim,.lead,p,.card p,.feat .fv,.manifesto p{color:#333}
+}
+</style>
+</head>
+<body>
+
+<div id="progress"></div>
+
+<!-- ===================== HERO ===================== -->
+<header class="hero wrap" id="top">
+  <div data-reveal>
+    <p class="eyebrow">Notes · Reminders · Handled</p>
+    <h1>Mono<span class="stroke">log</span></h1>
+    <p class="tagline">Type a thought. <span class="dim">AI figures out the rest.</span></p>
+    <p class="micro">No folders · No categories · No decisions</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="#get">Get Monolog</a>
+      <a class="btn btn-ghost" href="#how">See it in action ↓</a>
+    </div>
+  </div>
+
+</header>
+
+<!-- ===================== THE PITCH ===================== -->
+<section class="section wrap" id="pitch">
+  <p class="eyebrow" data-reveal>The pitch</p>
+  <h2 class="title" data-reveal>Three moves. <span class="dim">Zero decisions from you.</span></h2>
+  <div class="grid cols-3" data-stagger data-reveal>
+    <div class="card">
+      <p class="p-eyebrow">One input</p>
+      <h3>No categories. No fields.</h3>
+      <p>You never have to pick &ldquo;is this a note or a reminder?&rdquo; Just write the thought. That's the whole job &mdash; Monolog takes it from there.</p>
+    </div>
+    <div class="card">
+      <p class="p-eyebrow">AI sorts it</p>
+      <h3>Monolog understands your words.</h3>
+      <p>It reads what you wrote and knows whether it's something to <strong>remember</strong> or something that needs to <strong>fire at a specific time</strong>.</p>
+    </div>
+    <div class="card">
+      <p class="p-eyebrow">Fires itself</p>
+      <h3>Reminders that show up on time.</h3>
+      <p>If your thought is time-based, a reminder gets scheduled for you automatically. You never set a time &mdash; Monolog figured it out from what you typed.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== SEE IT ===================== -->
+<section class="section wrap" id="see">
+  <p class="eyebrow" data-reveal>See it</p>
+  <h2 class="title" data-reveal>This is the <span class="dim">whole app.</span></h2>
+  <p class="lead" data-reveal>Three screens. That's everything Monolog does &mdash; Write, Reminders, and Calendar.</p>
+
+  <div class="app-show" data-stagger data-reveal>
+
+    <!-- ============ PHONE 1 — WRITE ============ -->
+    <div class="phone-col">
+      <div class="phone">
+        <div class="island"></div>
+        <div class="app-screen">
+          <div class="app-h">
+            <span class="t">WRITE</span>
+            <span class="app-send"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></span>
+          </div>
+          <div class="app-pad">
+            <div class="app-write-text">remind me to call mom<br>tomorrow 9am<span class="app-caret"></span></div>
+          </div>
+          <!-- nav: calendar / create(on) / notifications -->
+          <nav class="app-nav">
+            <span class="n"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 2.5v4"/><path d="M16 2.5v4"/></svg></span>
+            <span class="n on"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+            <span class="n"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+          </nav>
+        </div>
+      </div>
+      <span class="phone-cap">Write</span>
+    </div>
+
+    <!-- ============ PHONE 2 — REMINDERS ============ -->
+    <div class="phone-col">
+      <div class="phone">
+        <div class="island"></div>
+        <div class="app-screen">
+          <div class="app-h">
+            <span class="t">REMINDERS</span>
+          </div>
+          <div class="app-list">
+            <div class="app-row"><span class="rt">Call mom</span><span class="rm">Jun 24, 09:00 AM</span></div>
+            <div class="app-row"><span class="rt">Buy milk</span><span class="rm">Jun 28, 10:00 AM</span></div>
+            <div class="app-row"><span class="rt">Standup</span><span class="rm">09:00 AM · daily</span></div>
+
+            <div class="app-sec-title">Notes</div>
+            <div class="app-note">
+              <div class="nb"><div class="nt">Meeting notes</div><div class="nr">Discussed Q3 roadmap and hiring plan…</div></div>
+              <span class="nd">Jun 22</span>
+            </div>
+            <div class="app-note">
+              <div class="nb"><div class="nt">Idea</div><div class="nr">App that sorts photos by color</div></div>
+              <span class="nd">Jun 21</span>
+            </div>
+          </div>
+          <!-- nav: calendar / create / notifications(on) -->
+          <nav class="app-nav">
+            <span class="n"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 2.5v4"/><path d="M16 2.5v4"/></svg></span>
+            <span class="n"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+            <span class="n on"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+          </nav>
+        </div>
+      </div>
+      <span class="phone-cap">Reminders</span>
+    </div>
+
+    <!-- ============ PHONE 3 — CALENDAR ============ -->
+    <div class="phone-col">
+      <div class="phone">
+        <div class="island"></div>
+        <div class="app-screen">
+          <div class="app-h">
+            <span class="t">CALENDAR</span>
+          </div>
+          <div class="app-cal-nav">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+            <span class="ml">June 2026</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+          </div>
+          <div class="app-dow">
+            <span class="d">Su</span><span class="d">M</span><span class="d">T</span><span class="d">W</span><span class="d">Th</span><span class="d">F</span><span class="d">Sa</span>
+          </div>
+          <div class="app-grid">
+            <!-- row 1: Su(blank) M1 T2 W3 Th4 F5(dot) Sa6 -->
+            <div class="app-cell"><div class="inner"></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">1</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">2</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">3</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">4</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">5</span><span class="dot"></span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">6</span></div></div>
+            <!-- row 2: 7..13, 12 dot -->
+            <div class="app-cell"><div class="inner"><span class="num">7</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">8</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">9</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">10</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">11</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">12</span><span class="dot"></span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">13</span></div></div>
+            <!-- row 3: 14..20 -->
+            <div class="app-cell"><div class="inner"><span class="num">14</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">15</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">16</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">17</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">18</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">19</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">20</span></div></div>
+            <!-- row 4: 21..27, 23 today, 24 selected+dot -->
+            <div class="app-cell"><div class="inner"><span class="num">21</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">22</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num today">23</span></div></div>
+            <div class="app-cell"><div class="inner sel"><span class="num sel">24</span><span class="dot"></span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">25</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">26</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">27</span></div></div>
+            <!-- row 5: 28(dot) 29 30 -->
+            <div class="app-cell"><div class="inner"><span class="num">28</span><span class="dot"></span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">29</span></div></div>
+            <div class="app-cell"><div class="inner"><span class="num">30</span></div></div>
+          </div>
+          <div class="app-cal-sec">
+            <div class="app-cal-lab">
+              <span class="lt">Reminders · 2</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg>
+            </div>
+            <div class="app-ev">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+              <div><div class="et">Call mom</div><div class="em">Jun 24, 09:00 AM</div></div>
+            </div>
+            <div class="app-ev">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+              <div><div class="et">Standup</div><div class="em">daily</div></div>
+            </div>
+          </div>
+          <!-- nav: calendar(on) / create / notifications -->
+          <nav class="app-nav">
+            <span class="n on"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="16" rx="2"/><path d="M3 9h18"/><path d="M8 2.5v4"/><path d="M16 2.5v4"/></svg></span>
+            <span class="n"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></span>
+            <span class="n"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+          </nav>
+        </div>
+      </div>
+      <span class="phone-cap">Calendar</span>
+    </div>
+
+  </div>
+</section>
+
+<!-- ===================== HOW IT WORKS ===================== -->
+<section class="section wrap" id="how">
+  <p class="eyebrow" data-reveal>How it works</p>
+  <h2 class="title" data-reveal>One, two, <span class="dim">three.</span></h2>
+  <p class="lead" data-reveal>You write. Monolog understands. The right thing happens. You're done.</p>
+
+  <ol class="flow" data-reveal style="margin-top:34px">
+    <li class="step">
+      <div class="step-num">01</div>
+      <div class="step-body">
+        <h3>Type your thought</h3>
+        <p>Write it the way you'd say it out loud. No menus, no structure &mdash; just the words as they come.</p>
+        <span class="ex">&ldquo;buy milk saturday&rdquo; · &ldquo;call mom tomorrow&rdquo; · &ldquo;the meeting went well&rdquo;</span>
+      </div>
+    </li>
+    <li class="step">
+      <div class="step-num">02</div>
+      <div class="step-body">
+        <h3>Monolog figures it out</h3>
+        <p>Is this a note to keep, or a reminder that needs a time? It reads your words and understands &mdash; no extra steps from you.</p>
+        <span class="ex">a reminder for saturday · a note about your day · it just knows</span>
+      </div>
+    </li>
+    <li class="step">
+      <div class="step-num">03</div>
+      <div class="step-body">
+        <h3>Saved or fired</h3>
+        <p>It lands as a note you can read later, or pops up as a reminder at exactly the right moment.</p>
+        <span class="ex">works offline · stays on your phone · you did nothing but write</span>
+      </div>
+    </li>
+  </ol>
+</section>
+
+<!-- ===================== FEATURES ===================== -->
+<section class="section wrap" id="features">
+  <p class="eyebrow" data-reveal>Features</p>
+  <h2 class="title" data-reveal>Small app. <span class="dim">Sharp edges.</span></h2>
+  <div class="feat-grid" data-stagger data-reveal style="margin-top:30px">
+    <div class="feat"><span class="fk">No signal needed</span><span class="fv">Your notes are saved on your phone. They're there whether you're online or not.</span></div>
+    <div class="feat"><span class="fk">Daily &middot; Weekly &middot; Monthly</span><span class="fv">Set it once. It comes back on its own.</span></div>
+    <div class="feat"><span class="fk">See the month</span><span class="fv">Every note and reminder lands on a clean calendar view.</span></div>
+    <div class="feat"><span class="fk">Flick it gone</span><span class="fv">Done with it? Swipe. No menus, no confirms.</span></div>
+    <div class="feat"><span class="fk">Drafts stay</span><span class="fv">If you get distracted mid-thought, it's still there when you come back.</span></div>
+    <div class="feat"><span class="fk">Easy on the eyes</span><span class="fv">No clutter, no colors screaming at you. Just calm, readable type.</span></div>
+    <div class="feat"><span class="fk">No signup</span><span class="fv">Open it. Start writing. That's it.</span></div>
+    <div class="feat"><span class="fk">Yours alone</span><span class="fv">Your thoughts don't get uploaded or tracked.</span></div>
+  </div>
+</section>
+
+<!-- ===================== PHILOSOPHY ===================== -->
+<section class="section wrap" id="philosophy">
+  <p class="eyebrow" data-reveal>The philosophy</p>
+  <blockquote class="manifesto" data-reveal>
+    <p>Every other notes app makes you decide what kind of thought you're having <span class="hi">before you've finished having it.</span> Monolog lets you <span class="hi">just think.</span></p>
+    <p class="attr">— the whole product, in one sentence</p>
+  </blockquote>
+</section>
+
+<!-- ===================== PRICING ===================== -->
+<section class="section wrap" id="pricing">
+  <p class="eyebrow" data-reveal>Pricing</p>
+  <h2 class="title" data-reveal>Two plans. <span class="dim">No tricks.</span></h2>
+  <p class="lead" data-reveal>No ads. No selling your data. No free tier that secretly sucks. Pay a little, get something good.</p>
+
+  <div class="grid cols-2" data-stagger data-reveal style="margin-top:36px">
+    <div class="price-card">
+      <p class="plan-name">Weekly</p>
+      <div class="price-block">
+        <p class="price">$1.49</p>
+        <p class="price-period">/ week</p>
+      </div>
+      <p class="benefit">Try it. Keep it if you love it.</p>
+      <div class="price-cta">
+        <a class="btn btn-ghost" href="#get">Choose weekly</a>
+      </div>
+    </div>
+    <div class="price-card is-featured">
+      <p class="plan-name">Monthly</p>
+      <div class="price-block">
+        <p class="price">$4.99</p>
+        <p class="price-period">/ month</p>
+      </div>
+      <p class="benefit">Save ~25% versus weekly.</p>
+      <div class="price-cta">
+        <a class="btn btn-primary" href="#get">Choose monthly</a>
+      </div>
+    </div>
+  </div>
+
+  <p class="price-foot" data-reveal>Cancel anytime. · Works on iPhone &amp; Android. · Your notes stay yours.</p>
+</section>
+
+<!-- ===================== CTA ===================== -->
+<section class="section wrap" id="get">
+  <div class="cta" data-reveal>
+    <p class="eyebrow" style="justify-content:center">Get Monolog</p>
+    <h2>Start writing in <span class="stroke">10 seconds.</span></h2>
+    <p class="sub">Free. No account. No nonsense.</p>
+    <div class="actions">
+      <a class="btn btn-primary" href="#" style="background:#000;color:#fff;border:1px solid #fff">
+        <svg width="14" height="16" viewBox="0 0 384 512" fill="currentColor" aria-hidden="true" style="display:block"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 140.7 0 183.8 0 272.2c0 26.2 4.8 53.3 14.4 81.2 12.8 36.7 59 126.7 107.2 125.2 25.2-.8 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-92.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+        <span>Download on the App Store</span>
+      </a>
+      <a class="btn btn-primary" href="#" style="background:#000;color:#fff;border:1px solid #fff">
+        <svg width="15" height="16" viewBox="0 0 512 512" fill="currentColor" aria-hidden="true" style="display:block"><path d="M325.3 234.3 104.6 13l280.8 161.2-60.1 60.1zM47 0C34 6.8 25.3 19.2 25.3 35.3v441.3c0 16.1 8.7 28.5 21.7 35.3l256.6-256L47 0zm425.2 225.6-58.9-34.1-65.7 64.5 65.7 64.5 60.1-34.1c18-14.3 18-46.5-1.2-60.8zM104.6 499l220.7-221.3 60.1 60.1L104.6 499z"/></svg>
+        <span>Get it on Google Play</span>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FOOTER ===================== -->
+<footer class="footer wrap">
+  <span>Monolog · made with care · 2026</span>
+  <span><a href="#top">Back to top ↑</a></span>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---- scroll progress bar ---- */
+  var bar = document.getElementById('progress');
+  function onScroll(){
+    var h = document.documentElement;
+    var scrolled = h.scrollTop;
+    var height = (h.scrollHeight - h.clientHeight);
+    var pct = height > 0 ? (scrolled / height) * 100 : 0;
+    bar.style.width = pct + '%';
+  }
+  window.addEventListener('scroll', onScroll, {passive:true});
+  onScroll();
+
+  /* ---- IntersectionObserver reveals ---- */
+  var revealEls = document.querySelectorAll('[data-reveal]');
+  if('IntersectionObserver' in window){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){
+        if(e.isIntersecting){
+          e.target.classList.add('is-visible');
+          io.unobserve(e.target);
+        }
+      });
+    }, {threshold:0.12, rootMargin:'0px 0px -8% 0px'});
+    revealEls.forEach(function(el){ io.observe(el); });
+  } else {
+    revealEls.forEach(function(el){ el.classList.add('is-visible'); });
+  }
+
+  /* ---- smooth-scroll for anchor links ---- */
+  var links = document.querySelectorAll('a[href^="#"]');
+  links.forEach(function(a){
+    a.addEventListener('click', function(ev){
+      var id = a.getAttribute('href');
+      if(id.length <= 1) return;
+      var el = document.querySelector(id);
+      if(!el) return;
+      ev.preventDefault();
+      el.scrollIntoView({behavior:'smooth', block:'start'});
+      if(history.pushState) history.pushState(null,'',id);
+    });
+  });
+})();
+</script>
+</body>
+</html>
