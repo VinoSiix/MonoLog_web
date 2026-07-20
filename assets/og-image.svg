@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <radialGradient id="vig" cx="50%" cy="0%" r="120%">
+      <stop offset="0%" stop-color="#1a1a1a"/>
+      <stop offset="60%" stop-color="#000000"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#000000"/>
+  <rect width="1200" height="630" fill="url(#vig)"/>
+
+  <!-- top hairline -->
+  <rect x="80" y="80" width="40" height="1" fill="#3a3a3a"/>
+
+  <!-- eyebrow -->
+  <text x="80" y="106" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="18" letter-spacing="6" fill="#8a8a8a">NOTES · REMINDERS · HANDLED</text>
+
+  <!-- big wordmark: Mono[log] with stroked "log" -->
+  <text x="80" y="320" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-weight="600" font-size="200" letter-spacing="-8" fill="#ffffff">Mono</text>
+  <text x="560" y="320" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-weight="600" font-size="200" letter-spacing="-8" fill="none" stroke="#ffffff" stroke-width="2">log</text>
+
+  <!-- tagline -->
+  <text x="80" y="396" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="32" letter-spacing="-1" fill="#ffffff">Type a thought.</text>
+  <text x="80" y="438" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="32" letter-spacing="-1" fill="#8a8a8a">AI figures out the rest.</text>
+
+  <!-- micro line -->
+  <text x="80" y="498" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="16" letter-spacing="4" fill="#555555">NO FOLDERS · NO CATEGORIES · NO DECISIONS</text>
+
+  <!-- bottom hairline + url -->
+  <rect x="80" y="555" width="1040" height="1" fill="#1d1d1d"/>
+  <text x="80" y="585" font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace" font-size="16" letter-spacing="2" fill="#555555">mono-log-web.vercel.app</text>
+</svg>

@@ -8,12 +8,15 @@
 <meta property="og:type" content="website">
 <meta property="og:title" content="Monolog — Type a thought. AI figures out the rest.">
 <meta property="og:description" content="Type one thought. Monolog figures out whether it's a note to keep or a reminder to fire at the right time. No categories. No sign-up. Just type.">
-<meta property="og:image" content="https://mono-log-web.vercel.app/assets/icon.png">
+<meta property="og:image" content="https://mono-log-web.vercel.app/assets/og-image.svg">
+<meta property="og:image:type" content="image/svg+xml">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
 <meta property="og:url" content="https://mono-log-web.vercel.app/">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Monolog — Type a thought. AI figures out the rest.">
 <meta name="twitter:description" content="Type one thought. Monolog figures out whether it's a note or a reminder.">
-<meta name="twitter:image" content="https://mono-log-web.vercel.app/assets/icon.png">
+<meta name="twitter:image" content="https://mono-log-web.vercel.app/assets/og-image.svg">
 <link rel="icon" type="image/png" href="assets/favicon.png">
 <style>
 /* ============================================================
@@ -434,11 +437,17 @@ strong{color:#fff;font-weight:600}
 
 .footer{
   border-top:1px solid var(--hairline);padding:46px var(--pad-x) 60px;
-  font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;color:var(--gray);
-  display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;
+  font-family:var(--mono);font-size:.74rem;letter-spacing:.06em;color:var(--gray);
+  display:grid;grid-template-columns:auto 1fr auto auto;gap:32px;align-items:center;
 }
 .footer a{transition:color .25s var(--ease)}
 .footer a:hover{color:var(--white)}
+.foot-left{display:flex;flex-direction:column;gap:4px}
+.foot-brand{color:#fff;font-weight:600;font-size:.86rem;letter-spacing:.04em}
+.foot-meta{color:var(--gray);font-size:.64rem;letter-spacing:.14em;text-transform:uppercase}
+.foot-nav{display:flex;gap:26px;justify-content:center;flex-wrap:wrap}
+.foot-contact{display:flex;gap:20px}
+.foot-top{color:var(--gray);white-space:nowrap}
 
 /* ============================================================
    RESPONSIVE
@@ -559,9 +568,11 @@ strong{color:#fff;font-weight:600}
 
   /* ---- FOOTER: stacked ---- */
   .footer{
-    flex-direction:column;align-items:flex-start;
-    gap:10px;font-size:.68rem;padding:38px var(--pad-x) 48px;
+    grid-template-columns:1fr;justify-items:start;
+    gap:20px;font-size:.7rem;padding:38px var(--pad-x) 48px;
   }
+  .foot-nav,.foot-contact{justify-content:flex-start;gap:18px}
+  .foot-brand{font-size:.8rem}
 }
 
 /* ---------- COMPACT PHONES (<=400px) ---------- */
@@ -658,6 +669,39 @@ strong{color:#fff;font-weight:600}
   a{color:#000}
   .dim,.lead,p,.card p,.feat .fv,.manifesto p{color:#333}
 }
+
+/* ============================================================
+   FAQ
+   ============================================================ */
+.faq-list{
+  display:flex;flex-direction:column;gap:1px;
+  background:var(--hairline);border:1px solid var(--hairline);
+  border-radius:var(--r);overflow:hidden;margin-top:30px;
+}
+.faq-item{
+  background:var(--card);padding:clamp(20px,2.5vw,28px) clamp(20px,2.5vw,28px);
+  transition:background .3s var(--ease);
+}
+.faq-item:hover{background:var(--card-hi)}
+.faq-item h3{
+  font-family:var(--mono);font-weight:600;font-size:1.02rem;
+  letter-spacing:-.01em;color:var(--white);margin:0 0 10px;
+  display:flex;align-items:baseline;gap:14px;
+}
+.faq-item h3 .qnum{
+  font-size:.7rem;color:var(--gray);letter-spacing:.2em;
+  flex:0 0 auto;font-weight:400;
+}
+.faq-item p{
+  color:var(--gray-bright);font-size:.96rem;line-height:1.6;
+  margin:0;
+}
+.faq-item p a{color:#fff;text-decoration:underline}
+@media (max-width:800px){
+  .faq-item{padding:20px 18px}
+  .faq-item h3{font-size:.98rem}
+  .faq-item p{font-size:.92rem}
+}
 </style>
 </head>
 <body>
@@ -673,8 +717,9 @@ strong{color:#fff;font-weight:600}
     <p class="micro">No folders · No categories · No decisions</p>
     <div class="cta-row">
       <a class="btn btn-primary" href="/app/">Try it out — free</a>
-      <a class="btn btn-ghost" href="#how">See it in action ↓</a>
+      <a class="btn btn-ghost" href="#see">See it in action ↓</a>
     </div>
+    <p class="micro" style="margin-top:22px">Free tier: 10 thoughts sorted per day · No card · No account</p>
   </div>
 
 </header>
@@ -742,17 +787,17 @@ strong{color:#fff;font-weight:600}
             <span class="t">REMINDERS</span>
           </div>
           <div class="app-list">
-            <div class="app-row"><span class="rt">Call mom</span><span class="rm">Jun 24, 09:00 AM</span></div>
-            <div class="app-row"><span class="rt">Buy milk</span><span class="rm">Jun 28, 10:00 AM</span></div>
-            <div class="app-row"><span class="rt">Standup</span><span class="rm">09:00 AM · daily</span></div>
+            <div class="app-row"><span class="rt">Text sam back</span><span class="rm">Fri, 09:00 AM</span></div>
+            <div class="app-row"><span class="rt">Noodle place for dinner</span><span class="rm">Sat, 07:30 PM</span></div>
+            <div class="app-row"><span class="rt">Email Ms. Chen back</span><span class="rm">Mon, 08:00 AM</span></div>
 
             <div class="app-sec-title">Notes</div>
             <div class="app-note">
-              <div class="nb"><div class="nt">Meeting notes</div><div class="nr">Discussed Q3 roadmap and hiring plan…</div></div>
+              <div class="nb"><div class="nt">Ian's playlist</div><div class="nr">the one with the lo-fi study tracks</div></div>
               <span class="nd">Jun 22</span>
             </div>
             <div class="app-note">
-              <div class="nb"><div class="nt">Idea</div><div class="nr">App that sorts photos by color</div></div>
+              <div class="nb"><div class="nt">Random thought</div><div class="nr">why does 3am hit different</div></div>
               <span class="nd">Jun 21</span>
             </div>
           </div>
@@ -777,49 +822,14 @@ strong{color:#fff;font-weight:600}
           </div>
           <div class="app-cal-nav">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-            <span class="ml">June 2026</span>
+            <span class="ml" id="cal-month-label">July 2026</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>
           </div>
           <div class="app-dow">
             <span class="d">Su</span><span class="d">M</span><span class="d">T</span><span class="d">W</span><span class="d">Th</span><span class="d">F</span><span class="d">Sa</span>
           </div>
-          <div class="app-grid">
-            <!-- row 1: Su(blank) M1 T2 W3 Th4 F5(dot) Sa6 -->
-            <div class="app-cell"><div class="inner"></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">1</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">2</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">3</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">4</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">5</span><span class="dot"></span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">6</span></div></div>
-            <!-- row 2: 7..13, 12 dot -->
-            <div class="app-cell"><div class="inner"><span class="num">7</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">8</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">9</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">10</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">11</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">12</span><span class="dot"></span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">13</span></div></div>
-            <!-- row 3: 14..20 -->
-            <div class="app-cell"><div class="inner"><span class="num">14</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">15</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">16</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">17</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">18</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">19</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">20</span></div></div>
-            <!-- row 4: 21..27, 23 today, 24 selected+dot -->
-            <div class="app-cell"><div class="inner"><span class="num">21</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">22</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num today">23</span></div></div>
-            <div class="app-cell"><div class="inner sel"><span class="num sel">24</span><span class="dot"></span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">25</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">26</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">27</span></div></div>
-            <!-- row 5: 28(dot) 29 30 -->
-            <div class="app-cell"><div class="inner"><span class="num">28</span><span class="dot"></span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">29</span></div></div>
-            <div class="app-cell"><div class="inner"><span class="num">30</span></div></div>
+          <div class="app-grid" id="cal-grid">
+            <!-- filled by JS so the mockup always shows the current month -->
           </div>
           <div class="app-cal-sec">
             <div class="app-cal-lab">
@@ -828,11 +838,11 @@ strong{color:#fff;font-weight:600}
             </div>
             <div class="app-ev">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
-              <div><div class="et">Call mom</div><div class="em">Jun 24, 09:00 AM</div></div>
+              <div><div class="et">Text sam back</div><div class="em">Fri, 09:00 AM</div></div>
             </div>
             <div class="app-ev">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
-              <div><div class="et">Standup</div><div class="em">daily</div></div>
+              <div><div class="et">Noodle place</div><div class="em">Sat, 07:30 PM</div></div>
             </div>
           </div>
           <!-- nav: calendar(on) / create / notifications -->
@@ -861,7 +871,7 @@ strong{color:#fff;font-weight:600}
       <div class="step-body">
         <h3>Type your thought</h3>
         <p>Write it the way you'd say it out loud. No menus, no structure &mdash; just the words as they come.</p>
-        <span class="ex">&ldquo;buy milk saturday&rdquo; · &ldquo;call mom tomorrow&rdquo; · &ldquo;the meeting went well&rdquo;</span>
+        <span class="ex">&ldquo;text sam back about friday&rdquo; · &ldquo;the playlist ian sent me&rdquo; · &ldquo;stop overthinking the email to my teacher&rdquo;</span>
       </div>
     </li>
     <li class="step">
@@ -869,7 +879,7 @@ strong{color:#fff;font-weight:600}
       <div class="step-body">
         <h3>Monolog figures it out</h3>
         <p>Is this a note to keep, or a reminder that needs a time? It reads your words and understands &mdash; no extra steps from you.</p>
-        <span class="ex">a reminder for saturday · a note about your day · it just knows</span>
+        <span class="ex">a reminder for friday · a note about your day · it just knows</span>
       </div>
     </li>
     <li class="step">
@@ -877,7 +887,7 @@ strong{color:#fff;font-weight:600}
       <div class="step-body">
         <h3>Saved or fired</h3>
         <p>It lands as a note you can read later, or pops up as a reminder at exactly the right moment.</p>
-        <span class="ex">works offline · stays on your phone · you did nothing but write</span>
+        <span class="ex">saved on your device · AI runs on demand · you did nothing but write</span>
       </div>
     </li>
   </ol>
@@ -888,14 +898,14 @@ strong{color:#fff;font-weight:600}
   <p class="eyebrow" data-reveal>Features</p>
   <h2 class="title" data-reveal>Small app. <span class="dim">Sharp edges.</span></h2>
   <div class="feat-grid" data-stagger data-reveal style="margin-top:30px">
-    <div class="feat"><span class="fk">No signal needed</span><span class="fv">Your notes are saved on your phone. They're there whether you're online or not.</span></div>
+    <div class="feat"><span class="fk">Saves offline</span><span class="fv">Notes land on your device first. AI sorting needs the internet, but everything you've already written stays readable without it.</span></div>
     <div class="feat"><span class="fk">Daily &middot; Weekly &middot; Monthly</span><span class="fv">Set it once. It comes back on its own.</span></div>
     <div class="feat"><span class="fk">See the month</span><span class="fv">Every note and reminder lands on a clean calendar view.</span></div>
     <div class="feat"><span class="fk">Flick it gone</span><span class="fv">Done with it? Swipe. No menus, no confirms.</span></div>
     <div class="feat"><span class="fk">Drafts stay</span><span class="fv">If you get distracted mid-thought, it's still there when you come back.</span></div>
     <div class="feat"><span class="fk">Easy on the eyes</span><span class="fv">No clutter, no colors screaming at you. Just calm, readable type.</span></div>
     <div class="feat"><span class="fk">No signup</span><span class="fv">Open it. Start writing. That's it.</span></div>
-    <div class="feat"><span class="fk">Yours alone</span><span class="fv">Your thoughts don't get uploaded or tracked.</span></div>
+    <div class="feat"><span class="fk">Yours alone</span><span class="fv">Notes live on your device. The AI only sees a thought when you submit it for sorting — not your whole library.</span></div>
   </div>
 </section>
 
@@ -906,6 +916,35 @@ strong{color:#fff;font-weight:600}
     <p>Every other notes app makes you decide what kind of thought you're having <span class="hi">before you've finished having it.</span> Monolog lets you <span class="hi">just think.</span></p>
     <p class="attr">— the whole product, in one sentence</p>
   </blockquote>
+</section>
+
+<!-- ===================== FAQ ===================== -->
+<section class="section wrap" id="faq">
+  <p class="eyebrow" data-reveal>FAQ</p>
+  <h2 class="title" data-reveal>Questions you have. <span class="dim">Answers we owe you.</span></h2>
+
+  <div class="faq-list" data-stagger data-reveal>
+    <div class="faq-item">
+      <h3><span class="qnum">01</span>Is it actually free?</h3>
+      <p>Yes. The free tier gives you 10 AI-sorted thoughts per day — enough for most people. No trial expiration, no credit card, no "free for 14 days then we charge you" trick. If you want unlimited sorting, paid plans exist; if you don't, free is free forever.</p>
+    </div>
+    <div class="faq-item">
+      <h3><span class="qnum">02</span>Where's my data stored?</h3>
+      <p>Notes and reminders live <strong>on your device</strong> (browser storage for web, app storage for iOS). We don't have a server-side copy of your notes. If you clear your storage, they're gone — we have no way to recover them.</p>
+    </div>
+    <div class="faq-item">
+      <h3><span class="qnum">03</span>Does the AI see everything I write?</h3>
+      <p>No. Only the specific thought you submit for sorting gets sent to the AI (over HTTPS, to Groq's inference API). Your existing notes library never leaves your device. If you don't tap submit, nothing leaves your phone.</p>
+    </div>
+    <div class="faq-item">
+      <h3><span class="qnum">04</span>What about Android?</h3>
+      <p>Web works perfectly in any browser (iPhone, Android, laptop, tablet). Native app launches on iOS first because it's a one-person team and prioritizing one platform means shipping something polished instead of two things that feel broken. Android is on the roadmap; join the waitlist to be notified.</p>
+    </div>
+    <div class="faq-item">
+      <h3><span class="qnum">05</span>Can I export my notes?</h3>
+      <p>Right now: copy and paste works (it's just text). A proper export feature (.txt, .json, or sync to a cloud service) is on the roadmap. Your notes are yours, so when export ships it'll be free for everyone — not a paid-only feature.</p>
+    </div>
+  </div>
 </section>
 
 <!-- ===================== PRICING ===================== -->
@@ -939,13 +978,14 @@ strong{color:#fff;font-weight:600}
     </div>
   </div>
 
-  <p class="price-foot" data-reveal>Cancel anytime. · Works on iPhone. · Your notes stay yours.</p>
+  <p class="price-foot" data-reveal>Cancel anytime. · Runs in your browser on iPhone today. · Native iOS coming soon.</p>
 </section>
 
 <!-- ===================== WAITLIST ===================== -->
 <section class="section wrap" id="waitlist">
   <p class="eyebrow" data-reveal>iOS is coming</p>
   <h2 class="title" data-reveal>Get Monolog. <span class="dim">First.</span></h2>
+  <p class="lead" data-reveal style="margin-top:6px">Be among the first 100 to get early access. We'll email you the moment iOS launches — no spam, no newsletter, just the one ping.</p>
 
   <form class="wl-row" id="wl-form" autocomplete="on" novalidate data-reveal style="margin-top:30px;max-width:520px">
     <input
@@ -980,8 +1020,21 @@ strong{color:#fff;font-weight:600}
 
 <!-- ===================== FOOTER ===================== -->
 <footer class="footer wrap">
-  <span>Monolog · made with care · 2026</span>
-  <span><a href="#top">Back to top ↑</a></span>
+  <div class="foot-left">
+    <span class="foot-brand">Monolog</span>
+    <span class="foot-meta">made with care · 2026</span>
+  </div>
+  <nav class="foot-nav">
+    <a href="index.html">Home</a>
+    <a href="#faq">FAQ</a>
+    <a href="privacy.html">Privacy</a>
+    <a href="terms.html">Terms</a>
+  </nav>
+  <div class="foot-contact">
+    <a href="https://x.com/VinoSiix" target="_blank" rel="noopener">X / VinoSiix</a>
+    <a href="mailto:timppamsix@gmail.com">Email</a>
+  </div>
+  <a href="#top" class="foot-top">Back to top ↑</a>
 </footer>
 
 <script>
@@ -999,6 +1052,49 @@ strong{color:#fff;font-weight:600}
   }
   window.addEventListener('scroll', onScroll, {passive:true});
   onScroll();
+
+  /* ---- calendar mockup: always show the current month ----
+     The phone preview grid is static HTML by default. We rebuild
+     it from `new Date()` so the mockup never looks stale.        */
+  function buildCalMock(){
+    var grid = document.getElementById('cal-grid');
+    if(!grid) return;
+    var label = document.getElementById('cal-month-label');
+    var now = new Date();
+    var year = now.getFullYear();
+    var month = now.getMonth(); /* 0-indexed */
+    var today = now.getDate();
+    var monthNames = ['January','February','March','April','May','June',
+                      'July','August','September','October','November','December'];
+    if(label) label.textContent = monthNames[month] + ' ' + year;
+
+    var firstDay = new Date(year, month, 1).getDay(); /* 0 = Sunday */
+    var daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    /* a few days with reminder dots — deterministic per month so they
+       don't jump around on every reload.                                  */
+    var dotDays = {};
+    [5, 12, 19, 28].forEach(function(d){ if(d <= daysInMonth) dotDays[d] = true; });
+
+    /* selected day = today + 4 (or last day if month is ending) */
+    var selDay = Math.min(today + 4, daysInMonth);
+    dotDays[selDay] = true;
+
+    var html = '';
+    for(var i = 0; i < firstDay; i++){
+      html += '<div class="app-cell"><div class="inner"></div></div>';
+    }
+    for(var d = 1; d <= daysInMonth; d++){
+      var innerCls = 'inner';
+      var numCls = 'num';
+      if(d === selDay){ innerCls += ' sel'; numCls += ' sel'; }
+      var numTodayCls = (d === today) ? numCls + ' today' : numCls;
+      var dot = dotDays[d] ? '<span class="dot"></span>' : '';
+      html += '<div class="app-cell"><div class="' + innerCls + '"><span class="' + numTodayCls + '">' + d + '</span>' + dot + '</div></div>';
+    }
+    grid.innerHTML = html;
+  }
+  buildCalMock();
 
   /* ---- IntersectionObserver reveals ---- */
   var revealEls = document.querySelectorAll('[data-reveal]');

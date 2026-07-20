@@ -139,6 +139,16 @@ fs.writeFileSync(appHtmlPath, appHtml);
 log('Copying landing page (index.html) to dist/index.html');
 fs.copyFileSync(path.join(ROOT, 'index.html'), path.join(DIST, 'index.html'));
 
+// ── Step 4b: Copy legal pages (privacy.html, terms.html) ────────
+// These are top-level static pages, same design system as index.html.
+for (const page of ['privacy.html', 'terms.html']) {
+  const src = path.join(ROOT, page);
+  if (fs.existsSync(src)) {
+    log(`Copying ${page} to dist/${page}`);
+    fs.copyFileSync(src, path.join(DIST, page));
+  }
+}
+
 // ── Step 5: Copy landing assets to dist/assets ───────────────────
 log('Copying assets/ to dist/assets/');
 function copyDir(src, dest) {
@@ -156,5 +166,7 @@ copyDir(path.join(ROOT, 'assets'), path.join(DIST, 'assets'));
 // ── Done ─────────────────────────────────────────────────────────
 log('Build complete. Output:');
 log('  dist/index.html   ← landing page');
+log('  dist/privacy.html ← privacy policy');
+log('  dist/terms.html   ← terms of service');
 log('  dist/app/         ← Expo web app (served at /app/)');
 log('  dist/assets/      ← landing assets');
