@@ -144,6 +144,14 @@ async function handleRequest(
     const localNow = formatLocal(now, offset);
     const localTz = `UTC${offset >= 0 ? '+' : '-'}${String(Math.abs(offset) / 60).padStart(2, '0')}:00`;
 
+    // Compute next Friday (used in the prompt examples) — must exist before the
+    // systemPrompt template literal is built, or every request will throw
+    // ReferenceError: nextFriday is not defined.
+    const todayDay = now.getDay(); // 0=Sun … 6=Sat
+    const daysUntilFriday = (5 - todayDay + 7) % 7 || 7; // next Friday (not today)
+    const nextFridayDate = new Date(now.getTime() + daysUntilFriday * 24 * 60 * 60 * 1000);
+    const nextFriday = `${nextFridayDate.getFullYear()}-${String(nextFridayDate.getMonth() + 1).padStart(2, '0')}-${String(nextFridayDate.getDate()).padStart(2, '0')}`;
+
     const remindersContext = reminders && reminders.length > 0
       ? `\n\nYour existing reminders (title → id):\n${reminders.map((r) => `- "${r.title}" (id: ${r.id})`).join('\n')}`
       : '\n\nYou have no existing reminders.';

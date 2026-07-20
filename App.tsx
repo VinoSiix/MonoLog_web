@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
+import * as Font from 'expo-font';
 import {
   ActivityIndicator,
   Alert,
@@ -1433,6 +1434,40 @@ function MonthView({
 // ─── App ────────────────────────────────────────────────────────
 
 export default function App() {
+  // Preload Ionicons font so icons render on web (production builds
+  // don't always wire the @expo/vector-icons font through automatically).
+  const [fontsReady, setFontsReady] = useState(false);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        await Font.loadAsync({
+          Ionicons: require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf'),
+        });
+      } catch {}
+      if (mounted) setFontsReady(true);
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  if (!fontsReady) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator color={WHITE} size="small" />
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.outerShell}>
+      <View style={styles.appShell}>
+        <AppInner />
+      </View>
+    </View>
+  );
+}
+
+function AppInner() {
   const [tab, setTab] = useState<'write' | 'reminders' | 'calendar'>('write');
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
@@ -1595,6 +1630,30 @@ export default function App() {
 // ─── Styles ─────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
+  // outerShell centers the app on large screens (desktop/tablet) on web.
+  // On native (phone), it just fills the screen.
+  outerShell: {
+    flex: 1,
+    backgroundColor: '#000',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // appShell is the "phone-shaped" column. On web it's capped at 440px wide,
+  // centered with side gutters once the viewport gets wider than a phone.
+  // On native it fills the whole screen.
+  appShell: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: BLACK,
+    ...(Platform.OS === 'web'
+      ? {
+          // On wide screens, add subtle border + shadow so it reads as a device.
+          boxShadow: '0 0 80px rgba(0,0,0,0.6)',
+          minHeight: '100vh',
+        }
+      : {}),
+  },
   container: { flex: 1, backgroundColor: BLACK },
 
   // Header
