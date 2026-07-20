@@ -49,15 +49,38 @@ function formatLocal(utcDate: Date, offsetMinutes: number): string {
   return `${y}-${m}-${d}T${h}:${min}:${s}`;
 }
 
+// ── CORS allowlist ─────────────────────────────────────────────
+// Production domain + common local dev origins. Anything else is rejected
+// by the browser (no Access-Control-Allow-Origin header returned).
+// Why: Origin reflection (echoing whatever Origin comes in) is the #1 CORS
+// anti-pattern — if we ever add cookies/auth, any site could call us as
+// the user. Allowlist now is future-proofing.
+const ALLOWED_ORIGINS = new Set([
+  'https://mono-log-web.vercel.app',
+  'http://localhost:8081',    // Expo Metro (web)
+  'http://localhost:19006',   // Expo Metro (web, alt)
+  'http://127.0.0.1:8081',
+  'https://localhost:8081',   // Some Expo setups use https
+]);
+
+function buildCorsHeaders(origin: string | null): Record<string, string> {
+  if (!origin || !ALLOWED_ORIGINS.has(origin)) {
+    // Returning {} means: no Access-Control-Allow-Origin header. Browser
+    // will block the response. The request still reaches the worker, but
+    // cross-origin JS can't read the response — which is what we want.
+    return { Vary: 'Origin' };
+  }
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    Vary: 'Origin',
+  };
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    // CORS — allow the Expo Go / local dev origin
-    const origin = request.headers.get('Origin') ?? '';
-    const corsHeaders = {
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    };
+    const corsHeaders = buildCorsHeaders(request.headers.get('Origin'));
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
@@ -70,12 +93,18 @@ export default {
       });
     }
 
-    // Top-level catcher so Cloudflare never shows a raw 1101.
+    // Top-level catcher so Cloudflare never shows a raw 1101. We log only
+    // a generic message — never raw error details that could leak internals
+    // (KV keys, env var names, file paths) to a potential attacker.
     try {
       return await handleRequest(request, env, corsHeaders);
     } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // Log full error server-side (Cloudflare dashboard), return generic
+      // to client. Avoid echoing stack traces.
+      console.error('Worker error:', msg);
       return new Response(
-        JSON.stringify({ error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) }),
+        JSON.stringify({ error: 'internal error' }),
         { status: 500, headers: { 'Content-Type': 'application/json', ...corsHeaders } },
       );
     }
@@ -118,13 +147,44 @@ async function handleRequest(
         });
       }
 
-      // Basic validation — not RFC-perfect, just catches obvious junk.
+      // Email validation — RFC 5322 simplified. Catches the obvious junk
+      // (missing @, no domain dot, spaces, control chars) without being
+      // so strict that we reject valid edge cases. Anything that passes
+      // this regex AND delivers to a real inbox is good enough for a waitlist.
       const normalized = (email ?? '').toLowerCase().trim();
-      if (!normalized || !normalized.includes('@') || normalized.length > 320) {
+      const EMAIL_RE = /^[^\s@<>()[\]\\,;:"]+@[^\s@<>()[\]\\,;:"]+\.[^\s@<>()[\]\\,;:"]{2,}$/;
+      if (!normalized || !EMAIL_RE.test(normalized) || normalized.length > 320) {
         return new Response(JSON.stringify({ error: 'valid email required' }), {
           status: 400,
           headers: { 'Content-Type': 'application/json', ...corsHeaders },
         });
+      }
+
+      // ── Per-IP rate limit on waitlist signups ─────────────────
+      // Without this, someone could script thousands of fake emails and
+      // fill our KV with garbage. 5 signups per IP per hour is plenty for
+      // a real human (typo-retries, multiple emails) but blocks flooding.
+      // Uses a separate key prefix so it doesn't collide with /analyze counters.
+      const wlIp = request.headers.get('CF-Connecting-IP')
+        ?? request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim()
+        ?? 'unknown';
+      const wlHourKey = `wl-rl:${wlIp}:${Math.floor(Date.now() / 3_600_000)}`; // bucket = hour
+      const wlCount = parseInt((await env.RATELIMIT.get(wlHourKey)) ?? '0', 10);
+      if (wlCount >= 5) {
+        return new Response(JSON.stringify({
+          error: 'too_many_signups',
+          message: 'Too many signups from this IP. Try again in an hour.',
+        }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'Retry-After': '3600', ...corsHeaders },
+        });
+      }
+      const wlNext = wlCount + 1;
+      if (wlCount === 0) {
+        // TTL: 2 hours so the bucket expires after the rate-limit window.
+        await env.RATELIMIT.put(wlHourKey, String(wlNext), { expirationTtl: 7200 });
+      } else {
+        await env.RATELIMIT.put(wlHourKey, String(wlNext));
       }
 
       // Check if already on the list.
@@ -157,6 +217,44 @@ async function handleRequest(
       if (!file || !(file instanceof File)) {
         return new Response(JSON.stringify({ error: 'file is required' }), {
           status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+
+      // ── File validation: type + size ───────────────────────────
+      // Without this, anyone can upload any file type (executable, image,
+      // huge binary) and we'd forward it to Groq. Groq would reject it,
+      // but the upload itself costs us bandwidth + worker CPU time.
+      // 25MB matches Whisper's own limit and is ~30 minutes of audio.
+      const ALLOWED_AUDIO = new Set([
+        'audio/mp4', 'audio/m4a', 'audio/x-m4a',
+        'audio/webm', 'audio/wav', 'audio/x-wav',
+        'audio/mpeg', 'audio/mp3', 'audio/ogg',
+        'audio/flac', 'audio/aac',
+      ]);
+      // File.type can be empty or unreliable when uploaded from RN — also
+      // accept based on extension as a fallback.
+      const ext = file.name.toLowerCase().split('.').pop() ?? '';
+      const ALLOWED_EXT = new Set(['mp4', 'm4a', 'webm', 'wav', 'mp3', 'ogg', 'flac', 'aac']);
+      const typeOk = ALLOWED_AUDIO.has(file.type) || file.type === '' && ALLOWED_EXT.has(ext);
+      if (!typeOk) {
+        return new Response(JSON.stringify({
+          error: 'unsupported file type',
+          message: 'Only audio files (mp3, m4a, wav, webm, etc.) are accepted.',
+          gotType: file.type || ext,
+        }), {
+          status: 415,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+
+      const MAX_AUDIO_BYTES = 25 * 1024 * 1024; // 25 MB
+      if (file.size > MAX_AUDIO_BYTES) {
+        return new Response(JSON.stringify({
+          error: 'file too large',
+          message: `Max ${Math.round(MAX_AUDIO_BYTES / 1024 / 1024)}MB. Yours is ${Math.round(file.size / 1024 / 1024)}MB.`,
+        }), {
+          status: 413,
           headers: { 'Content-Type': 'application/json', ...corsHeaders },
         });
       }
@@ -234,8 +332,28 @@ async function handleRequest(
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
+    // ── Input length cap (DoS protection) ───────────────────────
+    // Without this, someone could send 10MB of text and we'd forward it
+    // to Groq — burning tokens + timing out. 10k chars is ~2k tokens,
+    // plenty for any brain-dump; longer inputs are almost certainly abuse.
+    // The client-side TextInput has no max length, so this is the only
+    // gate.
+    const MAX_NOTE_LENGTH = 10_000;
+    if (text.length > MAX_NOTE_LENGTH) {
+      return new Response(JSON.stringify({
+        error: 'note too long',
+        message: `Max ${MAX_NOTE_LENGTH} characters per note.`,
+        limit: MAX_NOTE_LENGTH,
+      }), {
+        status: 413,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
 
-    const offset = timezoneOffset ?? 0;
+    // ── timezoneOffset bounds check ─────────────────────────────
+    // Valid timezone offsets are -12:00 to +14:00 = -720 to +840 min.
+    // Anything else is garbage or abuse.
+    const offset = Math.max(-840, Math.min(840, Number(timezoneOffset ?? 0) || 0));
     const now = new Date();
     const localNow = formatLocal(now, offset);
     const localTz = `UTC${offset >= 0 ? '+' : '-'}${String(Math.abs(offset) / 60).padStart(2, '0')}:00`;

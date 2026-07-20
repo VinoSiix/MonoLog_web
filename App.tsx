@@ -791,7 +791,6 @@ function RemindersPad({
   const [editDate, setEditDate] = useState(new Date());
 
   const [noteEditingId, setNoteEditingId] = useState<string | null>(null);
-  const [noteEditTitle, setNoteEditTitle] = useState('');
   const [noteEditRaw, setNoteEditRaw] = useState('');
   const scrollRef = useRef<ScrollView>(null);
 
@@ -849,16 +848,19 @@ function RemindersPad({
   const startNoteEdit = (n: Note) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setNoteEditingId(n.id);
-    setNoteEditTitle(n.title);
     setNoteEditRaw(n.raw);
   };
 
   const saveNoteEdit = async (n: Note) => {
-    if (!noteEditTitle.trim()) {
-      Alert.alert('Missing title', 'Enter a title for the note.');
+    if (!noteEditRaw.trim()) {
+      Alert.alert('Empty note', 'Write something first.');
       return;
     }
-    await onUpdateNote(n.id, { title: noteEditTitle.trim(), raw: noteEditRaw });
+    // Notes no longer have visible titles — keep `title` in sync with the
+    // raw text so the underlying data model stays consistent (the worker's
+    // fallback path and any future search use it). The UI never shows it.
+    const trimmed = noteEditRaw.trim();
+    await onUpdateNote(n.id, { title: trimmed.length > 60 ? trimmed.slice(0, 60) + '…' : trimmed, raw: trimmed });
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setNoteEditingId(null);
   };
@@ -981,22 +983,12 @@ function RemindersPad({
                   {noteEditingId === n.id ? (
                     <View style={styles.editCard}>
                       <TextInput
-                        value={noteEditTitle}
-                        onChangeText={setNoteEditTitle}
-                        style={styles.editInput}
-                        placeholder="Note title"
-                        placeholderTextColor={DIM}
-                        autoFocus
-                        keyboardAppearance="dark"
-                        selectionColor="#FFFFFF"
-                        cursorColor="#FFFFFF"
-                      />
-                      <TextInput
                         value={noteEditRaw}
                         onChangeText={setNoteEditRaw}
                         style={[styles.editInput, styles.editInputMultiline]}
-                        placeholder="Content"
+                        placeholder="Edit note"
                         placeholderTextColor={DIM}
+                        autoFocus
                         multiline
                         keyboardAppearance="dark"
                         selectionColor="#FFFFFF"
@@ -1013,23 +1005,19 @@ function RemindersPad({
                     </View>
                   ) : (
                     <SwipeToDelete onDelete={() => delNote(n)} deleting={deleting === n.id}>
-                      <Pressable onPress={() => startNoteEdit(n)} style={styles.noteItem}>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.noteTitle}>{n.title}</Text>
-                          {/* Only show the raw text if it's meaningfully
-                              different from the title — otherwise we'd be
-                              printing the same line twice (this happens when
-                              the AI backend is down and the fallback sets
-                              title = raw text). Compare case-insensitively
-                              and ignore leading/trailing whitespace. */}
-                          {n.raw.trim().toLowerCase() !== n.title.trim().toLowerCase() && (
-                            <Text style={styles.noteRaw} numberOfLines={2}>
-                              {n.raw}
-                            </Text>
+                      {(hovered) => (
+                        <Pressable onPress={() => startNoteEdit(n)} style={styles.noteItem}>
+                          <Text style={styles.noteRaw} numberOfLines={1}>
+                            {n.raw}
+                          </Text>
+                          {/* Hide date when delete button is visible so they
+                              don't overlap. Native always shows date
+                              (hovered is always false there). */}
+                          {!hovered && (
+                            <Text style={styles.noteDate}>{formatNoteDate(n.createdAt)}</Text>
                           )}
-                        </View>
-                        <Text style={styles.noteDate}>{formatNoteDate(n.createdAt)}</Text>
-                      </Pressable>
+                        </Pressable>
+                      )}
                     </SwipeToDelete>
                   )}
                 </View>
@@ -1047,9 +1035,12 @@ function RemindersPad({
 //     Touch users get the standard iOS-style swipe-left-to-reveal-delete.
 //   - Web (mouse): Swipeable's touch gestures don't fire with a mouse,
 //     so we render a hover-revealed delete button positioned absolutely
-//     on the right edge of the row. Because the delete button is a
-//     sibling of the row content (not nested inside the row's Pressable),
-//     there's no click-through — clicking delete never triggers edit.
+//     on the right edge of the row. The delete button overlays the right
+//     edge (where dates typically sit) — to prevent overlap, children
+//     can opt to receive a `hovered` boolean via render-prop and hide
+//     themselves when hovered. Native always passes hovered=false.
+
+type SwipeToDeleteChildren = React.ReactNode | ((hovered: boolean) => React.ReactNode);
 
 function SwipeToDelete({
   onDelete,
@@ -1058,11 +1049,17 @@ function SwipeToDelete({
 }: {
   onDelete: () => void;
   deleting: boolean;
-  children: React.ReactNode;
+  children: SwipeToDeleteChildren;
 }) {
   if (IS_WEB) {
-    return <HoverDelete onDelete={onDelete} deleting={deleting}>{children}</HoverDelete>;
+    return (
+      <HoverDelete onDelete={onDelete} deleting={deleting}>
+        {children}
+      </HoverDelete>
+    );
   }
+  // Native: no hover concept — always pass false if children is a function.
+  const resolved = typeof children === 'function' ? children(false) : children;
   return (
     <Swipeable
       overshootRight={false}
@@ -1093,17 +1090,14 @@ function SwipeToDelete({
         );
       }}
     >
-      {children}
+      {resolved}
     </Swipeable>
   );
 }
 
-// Web-only hover-revealed delete button. Wraps row content in a relative
-// View, tracks mouse enter/leave, and shows a trash button on the right
-// when hovered. The button overlays the right edge of the row content
-// (where the date typically sits) — this is intentional: hover = delete
-// intent, slight overlap with date is acceptable. Click anywhere else on
-// the row to edit.
+// Web-only hover-revealed delete button. Tracks mouse enter/leave and
+// passes `hovered` to children if they're a function — this lets rows
+// hide their date when the delete button is showing (no overlap).
 function HoverDelete({
   onDelete,
   deleting,
@@ -1111,13 +1105,12 @@ function HoverDelete({
 }: {
   onDelete: () => void;
   deleting: boolean;
-  children: React.ReactNode;
+  children: SwipeToDeleteChildren;
 }) {
   const [hovered, setHovered] = useState(false);
   return (
     <View
       style={{ position: 'relative' }}
-      // onMouseEnter/onMouseLeave are web-only; on native they're ignored.
       {...(Platform.OS === 'web'
         ? {
             onMouseEnter: () => setHovered(true),
@@ -1125,14 +1118,11 @@ function HoverDelete({
           }
         : {})}
     >
-      {children}
+      {typeof children === 'function' ? children(hovered) : children}
       <Pressable
         onPress={onDelete}
         style={[
           styles.hoverDeleteBtn,
-          // Visible only when hovered. opacity:0 keeps the slot reserved
-          // so layout doesn't shift, and pointerEvents below stops it
-          // swallowing clicks when invisible.
           { opacity: hovered ? 1 : 0, pointerEvents: hovered ? 'auto' : 'none' as any },
         ]}
       >
@@ -1506,17 +1496,18 @@ function MonthView({
                         onDelete={() => delNote(n)}
                         deleting={deleting === n.id}
                       >
-                        <View style={styles.noteItem}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.noteTitle}>{n.title}</Text>
-                            <Text style={styles.noteRaw} numberOfLines={2}>
+                        {(hovered) => (
+                          <View style={styles.noteItem}>
+                            <Text style={styles.noteRaw} numberOfLines={1}>
                               {n.raw}
                             </Text>
+                            {!hovered && (
+                              <Text style={styles.noteDate}>
+                                {new Date(n.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </Text>
+                            )}
                           </View>
-                          <Text style={styles.noteDate}>
-                            {new Date(n.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </Text>
-                        </View>
+                        )}
                       </SwipeToDelete>
                     ))}
                   </View>

@@ -2,8 +2,10 @@ name = "minnotes-worker"
 main = "src/index.ts"
 compatibility_date = "2026-06-01"
 
-[vars]
-GROQ_API_KEY = "REDACTED_GROQ_KEY_ROTATE_NOW"
+# GROQ_API_KEY is set as a Cloudflare secret (NOT in [vars]) so it never
+# lands in git. Set it once via:
+#   npx wrangler secret put GROQ_API_KEY
+# Then paste the key. The worker reads it from env.GROQ_API_KEY at runtime.
 
 [[kv_namespaces]]
 binding = "WAITLIST"
