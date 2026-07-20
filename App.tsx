@@ -1579,28 +1579,9 @@ export default function App() {
           pointerEvents="auto"
         >
           <View style={styles.welcomeInner}>
-            {/* Eyebrow — matches .hero .eyebrow on the landing page */}
-            <View style={styles.welcomeEyebrowRow}>
-              <View style={styles.welcomeEyebrowHairline} />
-              <Text style={styles.welcomeEyebrow}>NOTES · REMINDERS · HANDLED</Text>
-            </View>
-
-            {/* Wordmark — Mono[log] with stroked "log" on web (matches hero h1) */}
             <Text style={styles.welcomeTitle}>
-              Mono
-              <Text style={styles.welcomeTitleStroke}>log</Text>
+              Welcome to{'\n'}Monolog
             </Text>
-
-            {/* Tagline — matches .hero .tagline */}
-            <Text style={styles.welcomeTagline}>
-              Type a thought.{'\n'}
-              <Text style={styles.welcomeTaglineDim}>AI figures out the rest.</Text>
-            </Text>
-
-            {/* Micro line — matches .hero .micro */}
-            <Text style={styles.welcomeMicro}>NO FOLDERS · NO CATEGORIES · NO DECISIONS</Text>
-
-            {/* CTA — matches .btn .btn-primary on the landing page */}
             <Pressable
               onPress={dismissWelcome}
               style={({ pressed }) => [
@@ -1814,8 +1795,7 @@ const styles = StyleSheet.create({
   // ── Welcome overlay ─────────────────────────────────────────────
   // Absolute-fill on the appShell column (not the whole outer window) so on
   // desktop the welcome also respects the phone-shaped column. Pure black,
-  // centered content, monospace wordmark matching the landing page hero.
-  // Cross-fades out on tap.
+  // centered "Welcome to Monolog" + Start button. Cross-fades out on tap.
   welcomeOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
@@ -1823,77 +1803,30 @@ const styles = StyleSheet.create({
     zIndex: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 28,
+    paddingHorizontal: 32,
   },
   welcomeInner: {
     width: '100%',
-    alignItems: 'flex-start',
-  },
-  // Eyebrow row — small monospace label with a hairline to its left.
-  // Matches .eyebrow / .hero .eyebrow on the landing page.
-  welcomeEyebrowRow: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 26,
   },
-  welcomeEyebrowHairline: {
-    width: 26,
-    height: 1,
-    backgroundColor: '#3a3a3a',
-  },
-  welcomeEyebrow: {
-    color: '#8a8a8a',
-    fontFamily: MONO,
-    fontSize: 11,
-    letterSpacing: 3.2,
-    textTransform: 'uppercase',
-    fontWeight: '400',
-  },
-  // Wordmark. Big, monospace, tight tracking. "log" gets a text-stroke
-  // outline on web (matching the landing hero h1 .stroke); on native we
-  // fall back to solid white since RN doesn't support text-stroke easily.
+  // Title — monospace, big, centered. Matches the landing page's design
+  // language without copying the hero wordmark exactly (this is a welcome
+  // message, not a logo reveal).
   welcomeTitle: {
     color: WHITE,
     fontFamily: MONO,
     fontWeight: '700',
-    fontSize: 72,
-    lineHeight: 88,
-    letterSpacing: -3,
-  },
-  welcomeTitleStroke: {
-    color: 'transparent',
-    ...(Platform.OS === 'web'
-      ? { WebkitTextStroke: '2px #ffffff' as any }
-      : { color: WHITE }),
-  },
-  // Tagline — same monospace, slightly larger than body, with dim second line.
-  welcomeTagline: {
-    color: WHITE,
-    fontFamily: MONO,
-    fontSize: 17,
-    lineHeight: 24,
-    letterSpacing: -0.3,
-    marginTop: 24,
-  },
-  welcomeTaglineDim: {
-    color: '#8a8a8a',
-  },
-  // Micro line — tiny uppercase tracker text, sits below the tagline.
-  welcomeMicro: {
-    color: '#555555',
-    fontFamily: MONO,
-    fontSize: 11,
-    letterSpacing: 2.2,
-    textTransform: 'uppercase',
-    marginTop: 20,
+    fontSize: 40,
+    lineHeight: 50,
+    letterSpacing: -1.5,
+    textAlign: 'center',
   },
   // CTA button — pill, white background, black text, monospace uppercase.
   // Matches .btn .btn-primary on the landing page.
   welcomeCta: {
-    marginTop: 40,
+    marginTop: 48,
     paddingVertical: 16,
-    paddingHorizontal: 32,
+    paddingHorizontal: 44,
     borderRadius: 100,
     backgroundColor: WHITE,
   },
