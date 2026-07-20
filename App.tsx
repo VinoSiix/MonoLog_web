@@ -1447,7 +1447,7 @@ function MonthView({
 export default function App() {
   return (
     <View style={styles.outerShell}>
-      <View style={styles.appShell}>
+      <View style={styles.appShell} className="app-shell">
         <AppInner />
       </View>
     </View>
@@ -1638,22 +1638,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  // appShell is the "phone-shaped" column. On web it's capped at 440px wide,
-  // centered with side gutters once the viewport gets wider than a phone.
-  // On native it fills the whole screen.
+  // appShell is the "phone-shaped" column on small screens, but expands
+  // to use more of the available space on tablets and laptops.
+  // On native it always fills the whole screen.
   appShell: {
     flex: 1,
     width: '100%',
-    maxWidth: 440,
     backgroundColor: BLACK,
     ...(Platform.OS === 'web'
       ? {
-          // Faint side borders + a soft drop shadow so the centered column
-          // reads as a contained surface against the dark backdrop instead
-          // of "floating empty space" on large screens.
-          borderLeftWidth: 1,
-          borderRightWidth: 1,
-          borderColor: '#161616',
+          // Phones (< 600px): full width, phone-like feel.
+          // Small tablets / large phones (600-900px): cap at 540px, centered.
+          // Tablets / laptops (>= 900px): cap at 720px, centered with shadow.
+          // The media queries below adjust maxWidth + padding.
+          maxWidth: '100%',
+          marginHorizontal: 'auto',
           boxShadow: '0 0 60px rgba(0,0,0,0.5)',
           minHeight: '100vh',
         }

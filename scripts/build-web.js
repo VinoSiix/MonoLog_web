@@ -108,8 +108,29 @@ input:focus, textarea:focus, button:focus, [role="button"]:focus { outline: none
 textarea { resize: none; }
 `;
 
-if (fontFaceCss || inputResetCss) {
-  const injectTag = `<style id="web-reset">\n${fontFaceCss}\n${inputResetCss}</style>`;
+// Responsive shell — adjusts the app column width based on viewport.
+// The .app-shell className is set on the inner shell View in App.tsx.
+//   < 600px (phones):       full width, no padding
+//   600-899px (large phone / small tablet): 540px max, centered
+//   >= 900px (tablet / laptop):             720px max, centered
+const responsiveShellCss = `
+.app-shell {
+  max-width: 100% !important;
+  margin: 0 auto;
+}
+@media (min-width: 600px) {
+  .app-shell { max-width: 540px !important; }
+}
+@media (min-width: 900px) {
+  .app-shell { max-width: 720px !important; }
+}
+@media (min-width: 1200px) {
+  .app-shell { max-width: 820px !important; }
+}
+`;
+
+if (fontFaceCss || inputResetCss || responsiveShellCss) {
+  const injectTag = `<style id="web-reset">\n${fontFaceCss}\n${inputResetCss}\n${responsiveShellCss}</style>`;
   appHtml = appHtml.replace('</head>', `${injectTag}\n</head>`);
 }
 
