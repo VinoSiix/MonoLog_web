@@ -383,11 +383,19 @@ strong{color:#fff;font-weight:600}
 .price-card{
   display:flex;flex-direction:column;
   border:1px solid var(--hairline);border-radius:var(--r);background:var(--card);
-  padding:clamp(26px,3.4vw,38px);
+  /* Slightly tighter than the 2-col version — with 3 cards across, each
+     column is ~360px max, so we trade a little padding for content room. */
+  padding:clamp(22px,2.6vw,32px);
   transition:transform .3s var(--ease),border-color .3s var(--ease),box-shadow .3s var(--ease);
 }
 .price-card:hover{transform:translateY(-3px);box-shadow:0 14px 40px -22px rgba(0,0,0,.9)}
 .price-card.is-featured{border-color:var(--white)}
+/* Slightly smaller price font for 3-col layout so "$4.99" doesn't dominate */
+.price{
+  font-family:var(--mono);font-weight:600;
+  font-size:clamp(2.2rem,4.5vw,3.4rem);
+  line-height:1;letter-spacing:-.035em;color:var(--white);margin:0;
+}
 .price-card.is-featured:hover{border-color:var(--white)}
 .plan-name{
   font-family:var(--mono);font-size:.66rem;letter-spacing:.28em;text-transform:uppercase;
@@ -395,11 +403,6 @@ strong{color:#fff;font-weight:600}
 }
 .plan-name::before{content:"";width:20px;height:1px;background:var(--gray-faint)}
 .price-block{margin:0 0 18px}
-.price{
-  font-family:var(--mono);font-weight:600;
-  font-size:clamp(2.8rem,6.5vw,4.2rem);
-  line-height:1;letter-spacing:-.035em;color:var(--white);margin:0;
-}
 .price-period{
   font-family:var(--mono);font-size:.74rem;letter-spacing:.16em;text-transform:uppercase;
   color:var(--gray);margin:12px 0 0;
@@ -950,32 +953,50 @@ strong{color:#fff;font-weight:600}
 <!-- ===================== PRICING ===================== -->
 <section class="section wrap" id="pricing">
   <p class="eyebrow" data-reveal>Pricing</p>
-  <h2 class="title" data-reveal>Two plans. <span class="dim">No tricks.</span></h2>
-  <p class="lead" data-reveal>No ads. No selling your data. No free tier that secretly sucks. Pay a little, get something good.</p>
+  <h2 class="title" data-reveal>Three plans. <span class="dim">No tricks.</span></h2>
+  <p class="lead" data-reveal>No ads. No selling your data. Free forever if you want it. Pay a little, get more.</p>
 
-  <div class="grid cols-2" data-stagger data-reveal style="margin-top:36px">
+  <div class="grid cols-3" data-stagger data-reveal style="margin-top:36px">
+
+    <!-- FREE — lead with it so X visitors don't bounce -->
     <div class="price-card">
-      <p class="plan-name">Weekly</p>
+      <p class="plan-name">Free</p>
       <div class="price-block">
-        <p class="price">$1.49</p>
-        <p class="price-period">/ week</p>
+        <p class="price">$0</p>
+        <p class="price-period">/ forever</p>
       </div>
-      <p class="benefit">Try it. Keep it if you love it.</p>
+      <p class="benefit">10 AI-sorted thoughts per day. No card, no account. Enough for most people.</p>
       <div class="price-cta">
-        <a class="btn btn-ghost" href="/app/">Try free first</a>
+        <a class="btn btn-ghost" href="/app/">Try the web app</a>
       </div>
     </div>
+
+    <!-- MONTHLY (featured — middle tier draws the eye) -->
     <div class="price-card is-featured">
-      <p class="plan-name">Monthly</p>
+      <p class="plan-name">Pro · Monthly</p>
       <div class="price-block">
         <p class="price">$4.99</p>
         <p class="price-period">/ month</p>
       </div>
-      <p class="benefit">Save ~25% versus weekly.</p>
+      <p class="benefit">Unlimited sorting. For people who think a lot.</p>
       <div class="price-cta">
         <a class="btn btn-primary" href="/app/">Start free, upgrade later</a>
       </div>
     </div>
+
+    <!-- YEARLY — for believers, ~2 months free -->
+    <div class="price-card">
+      <p class="plan-name">Pro · Yearly</p>
+      <div class="price-block">
+        <p class="price">$49</p>
+        <p class="price-period">/ year · ~2 months free</p>
+      </div>
+      <p class="benefit">Same Pro, cheaper if you're staying. For the long-haulers.</p>
+      <div class="price-cta">
+        <a class="btn btn-ghost" href="/app/">Start free, upgrade later</a>
+      </div>
+    </div>
+
   </div>
 
   <p class="price-foot" data-reveal>Cancel anytime. · Runs in your browser on iPhone today. · Native iOS coming soon.</p>
