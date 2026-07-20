@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -789,7 +789,6 @@ function RemindersPad({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editDate, setEditDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [noteEditingId, setNoteEditingId] = useState<string | null>(null);
   const [noteEditTitle, setNoteEditTitle] = useState('');
@@ -864,39 +863,10 @@ function RemindersPad({
     setNoteEditingId(null);
   };
 
-  // ── Date helpers for inline picker ────────────────────────────
-  const isSameDay = (a: Date, b: Date) =>
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate();
-
-  const addDays = (d: Date, n: number) => {
-    const r = new Date(d);
-    r.setDate(r.getDate() + n);
-    return r;
-  };
-
-  const nextWeekday = (d: Date, target: number) => {
-    const r = new Date(d);
-    while (r.getDay() !== target) r.setDate(r.getDate() + 1);
-    return r;
-  };
-
-  const datePresets = [
-    { label: 'Today', getValue: () => new Date() },
-    { label: 'Tomorrow', getValue: () => addDays(new Date(), 1) },
-    { label: 'Sun', getValue: () => nextWeekday(new Date(), 0) },
-    { label: 'Mon', getValue: () => nextWeekday(new Date(), 1) },
-    { label: '+1 Week', getValue: () => addDays(new Date(), 7) },
-  ];
-
-  const timePresets = [
-    { label: '9 AM', h: 9, m: 0 },
-    { label: '12 PM', h: 12, m: 0 },
-    { label: '3 PM', h: 15, m: 0 },
-    { label: '6 PM', h: 18, m: 0 },
-    { label: '9 PM', h: 21, m: 0 },
-  ];
+  // ── Date formatters ──────────────────────────────────────────
+  // (The inline date/time picker helpers — datePresets, timePresets,
+  //   isSameDay, fmtEditDate — were removed when the reminder edit card
+  //   lost its date picker. Title-only editing now.)
 
   const formatDate = (iso: string) => {
     const d = new Date(iso);
@@ -917,9 +887,6 @@ function RemindersPad({
     };
     return d.toLocaleDateString('en-US', opts);
   };
-
-  const fmtEditDate = (d: Date) =>
-    `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} ${d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}`;
 
   // ── All reminders sorted ───────────────────────────────────────
   const now = Date.now();
@@ -966,50 +933,6 @@ function RemindersPad({
                           selectionColor="#FFFFFF"
                           cursorColor="#FFFFFF"
                         />
-                        <Pressable
-                          onPress={() => setShowDatePicker(!showDatePicker)}
-                          style={styles.editDatePick}
-                        >
-                          <Text style={{ color: DIM, fontSize: 12 }}>When</Text>
-                          <Text style={{ color: WHITE, fontSize: 14 }}>{fmtEditDate(editDate)}</Text>
-                        </Pressable>
-                        {showDatePicker && (
-                          <View style={{ marginTop: 12, gap: 8 }}>
-                            <Text style={{ color: DIM, fontSize: 11 }}>DATE</Text>
-                            <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-                              {datePresets.map((p) => {
-                                const d = p.getValue();
-                                return (
-                                  <PresetButton
-                                    key={p.label}
-                                    label={p.label}
-                                    active={isSameDay(d, editDate)}
-                                    onPress={() => {
-                                      const next = new Date(d);
-                                      next.setHours(editDate.getHours(), editDate.getMinutes());
-                                      setEditDate(next);
-                                    }}
-                                  />
-                                );
-                              })}
-                            </View>
-                            <Text style={{ color: DIM, fontSize: 11, marginTop: 4 }}>TIME</Text>
-                            <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
-                              {timePresets.map((p) => (
-                                <PresetButton
-                                  key={p.label}
-                                  label={p.label}
-                                  active={editDate.getHours() === p.h && editDate.getMinutes() === p.m}
-                                  onPress={() => {
-                                    const next = new Date(editDate);
-                                    next.setHours(p.h, p.m, 0, 0);
-                                    setEditDate(next);
-                                  }}
-                                />
-                              ))}
-                            </View>
-                          </View>
-                        )}
                         <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
                           <Pressable onPress={() => saveEdit(r)} style={styles.editSaveBtn}>
                             <Text style={styles.editSaveText}>Save</Text>
@@ -1020,30 +943,7 @@ function RemindersPad({
                         </View>
                       </View>
                     ) : (
-                      <Swipeable
-                        overshootRight={false}
-                        friction={2}
-                        renderRightActions={(progress) => {
-                          const tx = progress.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [100, 0],
-                          });
-                          return (
-                            <Animated.View style={{ transform: [{ translateX: tx }], justifyContent: 'center', alignItems: 'flex-end', width: 80, paddingRight: 10 }}>
-                              <Pressable
-                                onPress={() => del(r)}
-                                style={styles.swipeAction}
-                              >
-                                {deleting === r.id ? (
-                                  <ActivityIndicator color={WHITE} size="small" />
-                                ) : (
-                                  <Ionicons name="trash-outline" size={20} color={WHITE} />
-                                )}
-                              </Pressable>
-                            </Animated.View>
-                          );
-                        }}
-                      >
+                      <SwipeToDelete onDelete={() => del(r)} deleting={deleting === r.id}>
                         <View style={styles.reminderRow}>
                           <Pressable
                             onPress={() => startEdit(r)}
@@ -1062,7 +962,7 @@ function RemindersPad({
                             </Text>
                           </Pressable>
                         </View>
-                      </Swipeable>
+                      </SwipeToDelete>
                     )}
                   </View>
                 )))}
@@ -1112,46 +1012,136 @@ function RemindersPad({
                       </View>
                     </View>
                   ) : (
-                    <Swipeable
-                      overshootRight={false}
-                      friction={2}
-                      renderRightActions={(progress) => {
-                        const tx = progress.interpolate({
-                          inputRange: [0, 1],
-                          outputRange: [100, 0],
-                        });
-                        return (
-                          <Animated.View style={{ transform: [{ translateX: tx }], justifyContent: 'center', alignItems: 'flex-end', width: 80, paddingRight: 10 }}>
-                            <Pressable
-                              onPress={() => delNote(n)}
-                              style={styles.swipeAction}
-                            >
-                              {deleting === n.id ? (
-                                <ActivityIndicator color={WHITE} size="small" />
-                              ) : (
-                                <Ionicons name="trash-outline" size={20} color={WHITE} />
-                              )}
-                            </Pressable>
-                          </Animated.View>
-                        );
-                      }}
-                    >
+                    <SwipeToDelete onDelete={() => delNote(n)} deleting={deleting === n.id}>
                       <Pressable onPress={() => startNoteEdit(n)} style={styles.noteItem}>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.noteTitle}>{n.title}</Text>
-                          <Text style={styles.noteRaw} numberOfLines={2}>
-                            {n.raw}
-                          </Text>
+                          {/* Only show the raw text if it's meaningfully
+                              different from the title — otherwise we'd be
+                              printing the same line twice (this happens when
+                              the AI backend is down and the fallback sets
+                              title = raw text). Compare case-insensitively
+                              and ignore leading/trailing whitespace. */}
+                          {n.raw.trim().toLowerCase() !== n.title.trim().toLowerCase() && (
+                            <Text style={styles.noteRaw} numberOfLines={2}>
+                              {n.raw}
+                            </Text>
+                          )}
                         </View>
                         <Text style={styles.noteDate}>{formatNoteDate(n.createdAt)}</Text>
                       </Pressable>
-                    </Swipeable>
+                    </SwipeToDelete>
                   )}
                 </View>
               )))}
             </View>
         </ScrollView>
 
+    </View>
+  );
+}
+
+// ─── Swipe-to-delete wrapper ───────────────────────────────────
+// Branches by platform:
+//   - Native (touch): uses Swipeable from react-native-gesture-handler.
+//     Touch users get the standard iOS-style swipe-left-to-reveal-delete.
+//   - Web (mouse): Swipeable's touch gestures don't fire with a mouse,
+//     so we render a hover-revealed delete button positioned absolutely
+//     on the right edge of the row. Because the delete button is a
+//     sibling of the row content (not nested inside the row's Pressable),
+//     there's no click-through — clicking delete never triggers edit.
+
+function SwipeToDelete({
+  onDelete,
+  deleting,
+  children,
+}: {
+  onDelete: () => void;
+  deleting: boolean;
+  children: React.ReactNode;
+}) {
+  if (IS_WEB) {
+    return <HoverDelete onDelete={onDelete} deleting={deleting}>{children}</HoverDelete>;
+  }
+  return (
+    <Swipeable
+      overshootRight={false}
+      friction={2}
+      renderRightActions={(progress) => {
+        const tx = progress.interpolate({
+          inputRange: [0, 1],
+          outputRange: [100, 0],
+        });
+        return (
+          <Animated.View
+            style={{
+              transform: [{ translateX: tx }],
+              justifyContent: 'center',
+              alignItems: 'flex-end',
+              width: 80,
+              paddingRight: 10,
+            }}
+          >
+            <Pressable onPress={onDelete} style={styles.swipeAction}>
+              {deleting ? (
+                <ActivityIndicator color={WHITE} size="small" />
+              ) : (
+                <Ionicons name="trash-outline" size={20} color={WHITE} />
+              )}
+            </Pressable>
+          </Animated.View>
+        );
+      }}
+    >
+      {children}
+    </Swipeable>
+  );
+}
+
+// Web-only hover-revealed delete button. Wraps row content in a relative
+// View, tracks mouse enter/leave, and shows a trash button on the right
+// when hovered. The button overlays the right edge of the row content
+// (where the date typically sits) — this is intentional: hover = delete
+// intent, slight overlap with date is acceptable. Click anywhere else on
+// the row to edit.
+function HoverDelete({
+  onDelete,
+  deleting,
+  children,
+}: {
+  onDelete: () => void;
+  deleting: boolean;
+  children: React.ReactNode;
+}) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <View
+      style={{ position: 'relative' }}
+      // onMouseEnter/onMouseLeave are web-only; on native they're ignored.
+      {...(Platform.OS === 'web'
+        ? {
+            onMouseEnter: () => setHovered(true),
+            onMouseLeave: () => setHovered(false),
+          }
+        : {})}
+    >
+      {children}
+      <Pressable
+        onPress={onDelete}
+        style={[
+          styles.hoverDeleteBtn,
+          // Visible only when hovered. opacity:0 keeps the slot reserved
+          // so layout doesn't shift, and pointerEvents below stops it
+          // swallowing clicks when invisible.
+          { opacity: hovered ? 1 : 0, pointerEvents: hovered ? 'auto' : 'none' as any },
+        ]}
+      >
+        {deleting ? (
+          <ActivityIndicator color={WHITE} size="small" />
+        ) : (
+          <Ionicons name="trash-outline" size={18} color={WHITE} />
+        )}
+      </Pressable>
     </View>
   );
 }
@@ -1511,30 +1501,10 @@ function MonthView({
                 {calNotesOpen && (
                   <View>
                     {notesForSelectedDay.map((n) => (
-                      <Swipeable
+                      <SwipeToDelete
                         key={n.id}
-                        overshootRight={false}
-                        friction={2}
-                        renderRightActions={(progress) => {
-                          const tx = progress.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [100, 0],
-                          });
-                          return (
-                            <Animated.View style={{ transform: [{ translateX: tx }], justifyContent: 'center', alignItems: 'flex-end', width: 80, paddingRight: 10 }}>
-                              <Pressable
-                                onPress={() => delNote(n)}
-                                style={styles.swipeAction}
-                              >
-                                {deleting === n.id ? (
-                                  <ActivityIndicator color={WHITE} size="small" />
-                                ) : (
-                                  <Ionicons name="trash-outline" size={20} color={WHITE} />
-                                )}
-                              </Pressable>
-                            </Animated.View>
-                          );
-                        }}
+                        onDelete={() => delNote(n)}
+                        deleting={deleting === n.id}
                       >
                         <View style={styles.noteItem}>
                           <View style={{ flex: 1 }}>
@@ -1547,7 +1517,7 @@ function MonthView({
                             {new Date(n.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                           </Text>
                         </View>
-                      </Swipeable>
+                      </SwipeToDelete>
                     ))}
                   </View>
                 )}
@@ -2158,6 +2128,18 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  // Web-only hover delete button. Absolute-positioned at the right edge of
+  // the row. Opacity is toggled on hover via inline style; this base style
+  // only defines the geometry.
+  hoverDeleteBtn: {
+    position: 'absolute',
+    right: 4,
+    top: 0,
+    bottom: 0,
+    width: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Calendar
