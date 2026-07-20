@@ -49,6 +49,9 @@ const IS_WEB = Platform.OS === 'web';
 
 const NOTES_KEY = 'monolog.notes';
 const REMINDERS_KEY = 'monolog.reminders';
+// Once the user has tapped "Start" on the welcome screen once, we never show
+// it again on this device. Cleared if they wipe app/browser storage.
+const WELCOME_KEY = 'monolog.welcome.seen';
 
 // ─── Write Pad ──────────────────────────────────────────────────
 
@@ -1510,11 +1513,80 @@ export default function App() {
   const [tab, setTab] = useState<'write' | 'reminders' | 'calendar'>('write');
   const shellClassName = `app-shell${IS_WEB && tab === 'calendar' ? ' app-shell-wide' : ''}`;
 
+  // ── Welcome gate ──────────────────────────────────────────────
+  // Show a black splash with "Welcome to Monolog" + Start button the very
+  // first time the user opens the app on this device. Once they tap Start,
+  // we set a flag in AsyncStorage and never show it again.
+  //   welcomeReady: null  → still reading storage (render pure black, no flash)
+  //   welcomeReady: false → storage says they haven't seen it; show welcome
+  //   welcomeReady: true  → they've seen it; render the app normally
+  const [welcomeReady, setWelcomeReady] = useState<boolean | null>(null);
+  const [welcomeVisible, setWelcomeVisible] = useState(false);
+  const welcomeFade = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    AsyncStorage.getItem(WELCOME_KEY)
+      .then((v) => {
+        const seen = v === 'yes';
+        setWelcomeReady(seen);
+        setWelcomeVisible(!seen);
+      })
+      .catch(() => {
+        // If storage fails (rare), skip the welcome — don't block the app.
+        setWelcomeReady(true);
+        setWelcomeVisible(false);
+      });
+  }, []);
+
+  // Tap "Start": fade the welcome overlay out, then unmount it. The app is
+  // already mounted underneath, so this is a clean cross-fade — no pop-in.
+  const dismissWelcome = useCallback(() => {
+    Animated.timing(welcomeFade, {
+      toValue: 0,
+      duration: 700,
+      useNativeDriver: true,
+    }).start(() => setWelcomeVisible(false));
+    AsyncStorage.setItem(WELCOME_KEY, 'yes').catch(() => {});
+  }, [welcomeFade]);
+
+  // While reading storage: render an empty black shell so there's no flash
+  // of either the welcome screen or the app before we know which to show.
+  if (welcomeReady === null) {
+    return (
+      <View style={styles.outerShell}>
+        <View style={styles.appShell} className="app-shell" />
+      </View>
+    );
+  }
+
   return (
     <View style={styles.outerShell}>
       <View style={styles.appShell} className={shellClassName}>
         <AppInner tab={tab} setTab={setTab} />
       </View>
+
+      {welcomeVisible && (
+        <Animated.View
+          style={[styles.welcomeOverlay, { opacity: welcomeFade }]}
+          pointerEvents="auto"
+        >
+          <View style={styles.welcomeInner}>
+            <Text style={styles.welcomeTitle}>Welcome to{'\n'}Monolog</Text>
+            <Text style={styles.welcomeSub}>Type a thought. AI figures out the rest.</Text>
+            <Pressable
+              onPress={dismissWelcome}
+              style={({ pressed }) => [
+                styles.welcomeStart,
+                pressed && styles.welcomeStartPressed,
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="Start using Monolog"
+            >
+              <Text style={styles.welcomeStartText}>Start</Text>
+            </Pressable>
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -1710,6 +1782,58 @@ const styles = StyleSheet.create({
       : {}),
   },
   container: { flex: 1, backgroundColor: BLACK },
+
+  // ── Welcome overlay ─────────────────────────────────────────────
+  // Absolute-fill on the appShell column (not the whole outer window) so on
+  // desktop the welcome also respects the phone-shaped column. Pure black,
+  // centered content, Start button. Cross-fades out on tap.
+  welcomeOverlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: BLACK,
+    zIndex: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+  welcomeInner: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  welcomeTitle: {
+    color: WHITE,
+    fontSize: 44,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 52,
+    letterSpacing: -1.2,
+  },
+  welcomeSub: {
+    color: DIM,
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 18,
+    letterSpacing: 0.3,
+  },
+  welcomeStart: {
+    marginTop: 48,
+    paddingVertical: 14,
+    paddingHorizontal: 44,
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: WHITE,
+    backgroundColor: 'transparent',
+  },
+  welcomeStartPressed: {
+    opacity: 0.7,
+  },
+  welcomeStartText: {
+    color: WHITE,
+    fontSize: 15,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
 
   // Web-only wrapper for calendar content — caps width + centers horizontally
   // so day cells don't balloon out on wide desktop/tablet viewports.
