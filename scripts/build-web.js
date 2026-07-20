@@ -83,6 +83,7 @@ const FONTS_DIR = path.join(
 );
 
 let fontFaceCss = '';
+let fontPreloadHtml = '';
 if (fs.existsSync(FONTS_DIR)) {
   const ttfs = fs.readdirSync(FONTS_DIR).filter((f) => f.endsWith('.ttf'));
   const familyMap = new Map();
@@ -95,9 +96,22 @@ if (fs.existsSync(FONTS_DIR)) {
     familyMap.set(family, relPath);
   }
   for (const [family, url] of familyMap) {
-    fontFaceCss += `@font-face{font-family:"${family}";src:url("${url}") format("truetype");}\n`;
+    // font-display: block — icons are critical UI. Without this, browsers use
+    // 'auto' which can briefly render a tofu/empty glyph then swap to the real
+    // icon later (the "shows up after some time" bug). With block, the icon
+    // stays invisible until the font is ready, then snaps in cleanly. Preload
+    // (below) makes this gap tiny.
+    fontFaceCss += `@font-face{font-family:"${family}";src:url("${url}") format("truetype");font-display:block;}\n`;
+    // Preload ONLY Ionicons — it's the only icon set the app actually uses.
+    // Preloading the other 18 fonts would waste ~3MB on a slow connection.
+    // Preload tells the browser "start fetching this immediately, in parallel
+    // with HTML parsing" — instead of waiting for CSS to be parsed and applied
+    // before the font is discovered.
+    if (family === 'Ionicons') {
+      fontPreloadHtml += `<link rel="preload" as="font" type="font/ttf" href="${url}" crossorigin>\n`;
+    }
   }
-  log(`Injected ${familyMap.size} @font-face rules for icon fonts`);
+  log(`Injected ${familyMap.size} @font-face rules for icon fonts (+ preload for Ionicons)`);
 }
 
 // Kill the browser's default focus outline on inputs/textareas so typing
@@ -130,7 +144,9 @@ const responsiveShellCss = `
 
 if (fontFaceCss || inputResetCss || responsiveShellCss) {
   const injectTag = `<style id="web-reset">\n${fontFaceCss}\n${inputResetCss}\n${responsiveShellCss}</style>`;
-  appHtml = appHtml.replace('</head>', `${injectTag}\n</head>`);
+  // Preload tags go FIRST (before the <style> block) so the browser starts
+  // fetching fonts immediately, before it parses the rest of the head.
+  appHtml = appHtml.replace('</head>', `${fontPreloadHtml}${injectTag}\n</head>`);
 }
 
 fs.writeFileSync(appHtmlPath, appHtml);
