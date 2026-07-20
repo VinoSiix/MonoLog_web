@@ -1282,6 +1282,9 @@ function MonthView({
       </View>
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 20, paddingTop: 5 }}>
+        {/* On web, cap the calendar content width so cells don't balloon on
+            wide desktop/tablet viewports. On native, full width is correct. */}
+        <View style={IS_WEB ? styles.calWebWrap : undefined}>
         {/* Month nav */}
         <View style={styles.monthNav}>
           <Pressable onPress={prevMonth} hitSlop={10}>
@@ -1437,6 +1440,7 @@ function MonthView({
           </View>
         )}
         </Animated.View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -1659,6 +1663,16 @@ const styles = StyleSheet.create({
       : {}),
   },
   container: { flex: 1, backgroundColor: BLACK },
+
+  // Web-only wrapper for calendar content — caps width + centers horizontally
+  // so day cells don't balloon out on wide desktop/tablet viewports.
+  // aspectRatio: 1 on a 14.2857%-wide cell means cells scale with the column;
+  // capping the column to ~480px keeps cells at a phone-like ~60px square.
+  calWebWrap: {
+    width: '100%',
+    maxWidth: 480,
+    alignSelf: 'center',
+  },
 
   // Close button — small X in the top-right corner of the web app.
   // Returns user to the landing page. Web only.

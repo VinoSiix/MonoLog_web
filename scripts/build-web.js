@@ -110,22 +110,21 @@ textarea { resize: none; }
 
 // Responsive shell — adjusts the app column width based on viewport.
 // The .app-shell className is set on the inner shell View in App.tsx.
-//   < 600px (phones):       full width, no padding
-//   600-899px (large phone / small tablet): 540px max, centered
-//   >= 900px (tablet / laptop):             720px max, centered
+// Kept narrow on purpose: Monolog is a phone app, so on desktop it should
+// read as a centered phone-shaped column, not stretch to fill the screen.
+//   < 600px (phones):                full width
+//   600-899px (large phone / tablet): 480px max, centered
+//   >= 900px (laptop / desktop):      520px max, centered
 const responsiveShellCss = `
 .app-shell {
   max-width: 100% !important;
   margin: 0 auto;
 }
 @media (min-width: 600px) {
-  .app-shell { max-width: 540px !important; }
+  .app-shell { max-width: 480px !important; }
 }
 @media (min-width: 900px) {
-  .app-shell { max-width: 720px !important; }
-}
-@media (min-width: 1200px) {
-  .app-shell { max-width: 820px !important; }
+  .app-shell { max-width: 520px !important; }
 }
 `;
 
