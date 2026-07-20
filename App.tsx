@@ -9,7 +9,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -109,124 +108,58 @@ function openWaitlist(): void {
   }
 }
 
-// ─── Paywall Modal ──────────────────────────────────────────────
-// Shown when the user hits their 5/day free-tier limit. Styled to match
-// the landing page aesthetic: pure black card, monospace, white pill
-// primary button, ghost secondary.
-//
-// Uses RN's <Modal> component which portals above everything (no parent
-// positioning context issues). Each text is wrapped in its own <View>
-// to force block layout — react-native-web renders bare <Text> as <span>
-// which can go inline and pile up if not explicitly wrapped.
-function PaywallModal({
-  visible,
-  limit,
-  onClose,
-  onJoinWaitlist,
-}: {
-  visible: boolean;
-  limit: number;
-  onClose: () => void;
-  onJoinWaitlist: () => void;
-}) {
-  return (
-    <Modal
-      visible={visible}
-      transparent={true}
-      animationType="fade"
-      onRequestClose={onClose}
-      statusBarTranslucent
-    >
-      <View style={paywallStyles.overlay}>
-        {/* Backdrop tap closes the modal. Solid black so app text behind
-            it can't bleed through. */}
-        <Pressable style={paywallStyles.backdrop} onPress={onClose} />
-        {/* Card. maxWidth caps width on desktop; on mobile it fills. */}
-        <View style={paywallStyles.card}>
-          <View style={paywallStyles.eyebrowWrap}>
-            <Text style={paywallStyles.eyebrow}>FREE TIER · {limit}/DAY</Text>
-          </View>
-          <View style={paywallStyles.titleWrap}>
-            <Text style={paywallStyles.title}>That's all {limit} for today.</Text>
-          </View>
-          <View style={paywallStyles.bodyWrap}>
-            <Text style={paywallStyles.body}>
-              You've used all {limit} free sorts. They reset at midnight.
-              Need more? Paid plans (unlimited sorts, scheduled reminders,
-              sync) are coming soon.
-            </Text>
-          </View>
-          <View style={paywallStyles.ctaRow}>
-            <Pressable
-              style={({ pressed }) => [paywallStyles.btnPrimary, pressed && paywallStyles.btnPressed]}
-              onPress={onJoinWaitlist}
-            >
-              <Text style={paywallStyles.btnPrimaryText}>Join waitlist</Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [paywallStyles.btnGhost, pressed && paywallStyles.btnPressed]}
-              onPress={onClose}
-            >
-              <Text style={paywallStyles.btnGhostText}>Not now</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
+// ─── Paywall styles (modal JSX is rendered inline at App root,
+// same pattern as the welcome overlay — keeps positioning context clean.
 const paywallStyles = StyleSheet.create({
   overlay: {
-    flex: 1,
+    position: "absolute",
+    top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: BLACK,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 28,
+    zIndex: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 28,
   },
   backdrop: {
-    position: 'absolute',
+    position: "absolute",
     top: 0, left: 0, right: 0, bottom: 0,
     backgroundColor: BLACK,
   },
   card: {
-    width: '100%',
+    width: "100%",
     maxWidth: 420,
     backgroundColor: BLACK,
     borderWidth: 1,
-    borderColor: '#1f1f1f',
+    borderColor: "#1f1f1f",
     borderRadius: 14,
     padding: 28,
   },
-  // Each text wrapped in its own View with explicit bottom margin to
-  // guarantee block stacking regardless of how react-native-web chooses
-  // to render bare <Text>.
-  eyebrowWrap: { marginBottom: 14 },
-  titleWrap: { marginBottom: 14 },
-  bodyWrap: { marginBottom: 28 },
   eyebrow: {
     fontFamily: MONO,
     fontSize: 11,
     letterSpacing: 2.5,
     color: DIM,
+    marginBottom: 14,
   },
   title: {
     fontFamily: MONO,
     fontSize: 22,
-    fontWeight: '600',
+    fontWeight: "600",
     color: WHITE,
     letterSpacing: -0.4,
     lineHeight: 1.15,
+    marginBottom: 14,
   },
   body: {
     fontFamily: MONO,
     fontSize: 13,
     lineHeight: 1.55,
-    color: '#bbb',
+    color: "#bbb",
+    marginBottom: 28,
   },
   ctaRow: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
+    flexDirection: "row",
+    alignItems: "stretch",
   },
   btnPrimary: {
     flex: 1,
@@ -234,20 +167,20 @@ const paywallStyles = StyleSheet.create({
     borderRadius: 100,
     paddingVertical: 14,
     paddingHorizontal: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 10,
   },
   btnGhost: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
     borderWidth: 1,
-    borderColor: '#2a2a2a',
+    borderColor: "#2a2a2a",
     borderRadius: 100,
     paddingVertical: 14,
     paddingHorizontal: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   btnPressed: { opacity: 0.7 },
   btnPrimaryText: {
@@ -255,13 +188,13 @@ const paywallStyles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 1.5,
     color: BLACK,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   btnGhostText: {
     fontFamily: MONO,
     fontSize: 12,
     letterSpacing: 1.5,
-    color: '#bbb',
+    color: "#bbb",
   },
 });
 
@@ -270,13 +203,14 @@ const paywallStyles = StyleSheet.create({
 function WritePad({
   onReminderCreated,
   onNoteCreated,
+  onHitPaywall,
 }: {
   onReminderCreated: () => void;
   onNoteCreated: () => void;
+  onHitPaywall: () => void;
 }) {
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
-  const [paywallVisible, setPaywallVisible] = useState(false);
   const [listening, setListening] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -483,8 +417,8 @@ function WritePad({
     if (processing && !listening) {
       const pulse = Animated.loop(
         Animated.sequence([
-          Animated.timing(savingOpacity, { toValue: 1, duration: 1200, useNativeDriver: true }),
-          Animated.timing(savingOpacity, { toValue: 0.5, duration: 1200, useNativeDriver: true }),
+          Animated.timing(savingOpacity, { toValue: 1, duration: 2200, useNativeDriver: true }),
+          Animated.timing(savingOpacity, { toValue: 0.4, duration: 2200, useNativeDriver: true }),
         ]),
       );
       pulse.start();
@@ -502,8 +436,8 @@ function WritePad({
     if (saving) {
       const loop = Animated.loop(
         Animated.sequence([
-          Animated.timing(thinkingAnim, { toValue: 1, duration: 500, useNativeDriver: false }),
-          Animated.timing(thinkingAnim, { toValue: 0, duration: 500, useNativeDriver: false }),
+          Animated.timing(thinkingAnim, { toValue: 1, duration: 1400, useNativeDriver: false }),
+          Animated.timing(thinkingAnim, { toValue: 0, duration: 1400, useNativeDriver: false }),
         ]),
       );
       loop.start();
@@ -512,7 +446,7 @@ function WritePad({
       const dotInterval = setInterval(() => {
         dotI = (dotI + 1) % 4;
         setDotCount(dotI);
-      }, 400);
+      }, 700);
 
       return () => {
         loop.stop();
@@ -579,7 +513,7 @@ function WritePad({
     if (!canSort) {
       const remaining = await getRemainingToday();
       void remaining;
-      setPaywallVisible(true);
+      onHitPaywall();
       return;
     }
 
@@ -635,7 +569,7 @@ function WritePad({
           Animated.timing(draftFade, { toValue: 1, duration: 220, useNativeDriver: false }),
           Animated.timing(savingFade, { toValue: 0, duration: 220, useNativeDriver: false }),
         ]).start();
-        setPaywallVisible(true);
+        onHitPaywall();
         return;
       }
       // ── AI temporarily unavailable (shared Groq free-tier RPM hit) ──
@@ -1021,15 +955,6 @@ function WritePad({
         )}
       </View>
 
-      <PaywallModal
-        visible={paywallVisible}
-        limit={FREE_TIER_DAILY_LIMIT}
-        onClose={() => setPaywallVisible(false)}
-        onJoinWaitlist={() => {
-          setPaywallVisible(false);
-          openWaitlist();
-        }}
-      />
     </RootWrapper>
   );
 }
@@ -1804,6 +1729,32 @@ export default function App() {
   const [welcomeVisible, setWelcomeVisible] = useState(false);
   const welcomeFade = useRef(new Animated.Value(1)).current;
 
+  // Paywall state lives at root so the modal renders above everything
+  // (same pattern as the welcome overlay). Buried inside WritePad it was
+  // inheriting weird positioning context from KeyboardAvoidingView.
+  const [paywallVisible, setPaywallVisible] = useState(false);
+  const paywallFade = useRef(new Animated.Value(0)).current;
+
+  // Triggered by WritePad when rate-limit is hit. Fades the modal in.
+  const showPaywall = useCallback(() => {
+    setPaywallVisible(true);
+    paywallFade.setValue(0);
+    Animated.timing(paywallFade, {
+      toValue: 1,
+      duration: 250,
+      easing: Easing.out(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  }, [paywallFade]);
+
+  const hidePaywall = useCallback(() => {
+    Animated.timing(paywallFade, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => setPaywallVisible(false));
+  }, [paywallFade]);
+
   useEffect(() => {
     AsyncStorage.getItem(WELCOME_KEY)
       .then((v) => {
@@ -1842,8 +1793,44 @@ export default function App() {
   return (
     <View style={styles.outerShell}>
       <View style={styles.appShell} className={shellClassName}>
-        <AppInner tab={tab} setTab={setTab} />
+        <AppInner tab={tab} setTab={setTab} onHitPaywall={showPaywall} />
       </View>
+
+      {/* Paywall modal — rendered at root so positioning context is clean.
+          Same pattern as the welcome overlay below. */}
+      {paywallVisible && (
+        <Animated.View
+          style={[paywallStyles.overlay, { opacity: paywallFade }]}
+          pointerEvents="auto"
+        >
+          <Pressable style={paywallStyles.backdrop} onPress={hidePaywall} />
+          <View style={paywallStyles.card}>
+            <Text style={paywallStyles.eyebrow}>
+              FREE TIER · {FREE_TIER_DAILY_LIMIT}/DAY
+            </Text>
+            <Text style={paywallStyles.title}>
+              That's all {FREE_TIER_DAILY_LIMIT} for today.
+            </Text>
+            <Text style={paywallStyles.body}>
+              You've used all {FREE_TIER_DAILY_LIMIT} free sorts. They reset at midnight. Need more? Paid plans (unlimited sorts, scheduled reminders, sync) are coming soon.
+            </Text>
+            <View style={paywallStyles.ctaRow}>
+              <Pressable
+                style={({ pressed }) => [paywallStyles.btnPrimary, pressed && paywallStyles.btnPressed]}
+                onPress={() => { hidePaywall(); openWaitlist(); }}
+              >
+                <Text style={paywallStyles.btnPrimaryText}>Join waitlist</Text>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [paywallStyles.btnGhost, pressed && paywallStyles.btnPressed]}
+                onPress={hidePaywall}
+              >
+                <Text style={paywallStyles.btnGhostText}>Not now</Text>
+              </Pressable>
+            </View>
+          </View>
+        </Animated.View>
+      )}
 
       {welcomeVisible && (
         <Animated.View
@@ -1874,7 +1861,7 @@ export default function App() {
   );
 }
 
-function AppInner({ tab, setTab }: { tab: 'write' | 'reminders' | 'calendar'; setTab: (t: 'write' | 'reminders' | 'calendar') => void }) {
+function AppInner({ tab, setTab, onHitPaywall }: { tab: 'write' | 'reminders' | 'calendar'; setTab: (t: 'write' | 'reminders' | 'calendar') => void; onHitPaywall: () => void }) {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -1976,7 +1963,7 @@ function AppInner({ tab, setTab }: { tab: 'write' | 'reminders' | 'calendar'; se
         ]}
       >
         {tab === 'write' ? (
-          <WritePad onReminderCreated={loadReminders} onNoteCreated={loadNotes} />
+          <WritePad onReminderCreated={loadReminders} onNoteCreated={loadNotes} onHitPaywall={onHitPaywall} />
         ) : tab === 'reminders' ? (
           <RemindersPad
             reminders={reminders}
