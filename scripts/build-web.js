@@ -62,10 +62,14 @@ appHtml = appHtml
   .replace(/href="\/favicon\//g, 'href="./favicon/')
   .replace(/href="\/favicon\.ico"/g, 'href="./favicon.ico"');
 
-// ── Step 3b: Inject @font-face rules for every bundled .ttf icon font ──
-// The fonts end up at: app/assets/node_modules/@expo/vector-icons/.../Fonts/NAME.HASH.ttf
-// Filename convention: <FontFamily>.<hash>.ttf (no other dots in the family name
-// for vector-icons fonts — FontAwesome5_Brands etc. are an exception).
+// ── Step 3b: Inject CSS — @font-face for icon fonts + web input reset ──
+// Two concerns:
+//  (a) @expo/vector-icons renders icons as text with fontFamily="Ionicons".
+//      The browser needs @font-face declarations to resolve those family names
+//      — react-native-web doesn't inject them in production builds.
+//  (b) react-native-web renders <TextInput> as a <textarea>/<input> and
+//      browsers auto-add a focus outline (the blue ring). We reset it so the
+//      input doesn't "highlight" while typing.
 const FONTS_DIR = path.join(
   APP_OUT,
   'assets',
@@ -81,37 +85,31 @@ const FONTS_DIR = path.join(
 let fontFaceCss = '';
 if (fs.existsSync(FONTS_DIR)) {
   const ttfs = fs.readdirSync(FONTS_DIR).filter((f) => f.endsWith('.ttf'));
-  // Map: family name (normalized) → relative URL
-  // Examples we recognize:
-  //   Ionicons.HASH.ttf             → "Ionicons"
-  //   MaterialCommunityIcons.HASH   → "MaterialCommunityIcons"
-  //   FontAwesome5_Brands.HASH      → "FontAwesome5_Brands"
-  //   FontAwesome5_Regular.HASH     → "FontAwesome5_Regular"
-  // The hash is the first segment after the family name, separated by "."
   const familyMap = new Map();
   for (const file of ttfs) {
-    // Strip ".ttf", then split on "." — first segment is the family name.
     const base = file.replace(/\.ttf$/, '');
-    const dotIdx = base.lastIndexOf('.');
-    // Find the first segment that looks like a 32-hex-char hash.
-    // Safer: split on first ".hash" — but family names can contain underscores,
-    // not dots. So split on the first "." that begins a hex string.
     const match = base.match(/^([^.]+)\.([a-f0-9]{16,})$/i);
     if (!match) continue;
     const family = match[1];
     const relPath = `./assets/node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/${file}`;
     familyMap.set(family, relPath);
   }
-
   for (const [family, url] of familyMap) {
     fontFaceCss += `@font-face{font-family:"${family}";src:url("${url}") format("truetype");}\n`;
   }
   log(`Injected ${familyMap.size} @font-face rules for icon fonts`);
 }
 
-if (fontFaceCss) {
-  // Inject into <head> right before </head>.
-  const injectTag = `<style id="icon-fonts">\n${fontFaceCss}</style>`;
+// Kill the browser's default focus outline on inputs/textareas so typing
+// doesn't show the blue/white ring. The React Native app draws its own
+// caret via cursorColor; the browser ring is unwanted noise.
+const inputResetCss = `
+input:focus, textarea:focus, button:focus, [role="button"]:focus { outline: none; }
+textarea { resize: none; }
+`;
+
+if (fontFaceCss || inputResetCss) {
+  const injectTag = `<style id="web-reset">\n${fontFaceCss}\n${inputResetCss}</style>`;
   appHtml = appHtml.replace('</head>', `${injectTag}\n</head>`);
 }
 
