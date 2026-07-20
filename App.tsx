@@ -44,6 +44,14 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const BLACK = '#000000';
 const WHITE = '#FFFFFF';
 const DIM = '#777777';
+// Landing-page-style monospace stack. Web uses the full CSS stack so it
+// picks ui-monospace → SF Mono → Menlo. Native uses Menlo (available on iOS
+// and a reasonable fallback on Android). Kept as a constant so the welcome
+// screen typography matches index.html's hero exactly.
+const MONO = Platform.select<string>({
+  web: 'ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace',
+  default: 'Menlo',
+});
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -1571,18 +1579,38 @@ export default function App() {
           pointerEvents="auto"
         >
           <View style={styles.welcomeInner}>
-            <Text style={styles.welcomeTitle}>Welcome to{'\n'}Monolog</Text>
-            <Text style={styles.welcomeSub}>Type a thought. AI figures out the rest.</Text>
+            {/* Eyebrow — matches .hero .eyebrow on the landing page */}
+            <View style={styles.welcomeEyebrowRow}>
+              <View style={styles.welcomeEyebrowHairline} />
+              <Text style={styles.welcomeEyebrow}>NOTES · REMINDERS · HANDLED</Text>
+            </View>
+
+            {/* Wordmark — Mono[log] with stroked "log" on web (matches hero h1) */}
+            <Text style={styles.welcomeTitle}>
+              Mono
+              <Text style={styles.welcomeTitleStroke}>log</Text>
+            </Text>
+
+            {/* Tagline — matches .hero .tagline */}
+            <Text style={styles.welcomeTagline}>
+              Type a thought.{'\n'}
+              <Text style={styles.welcomeTaglineDim}>AI figures out the rest.</Text>
+            </Text>
+
+            {/* Micro line — matches .hero .micro */}
+            <Text style={styles.welcomeMicro}>NO FOLDERS · NO CATEGORIES · NO DECISIONS</Text>
+
+            {/* CTA — matches .btn .btn-primary on the landing page */}
             <Pressable
               onPress={dismissWelcome}
               style={({ pressed }) => [
-                styles.welcomeStart,
-                pressed && styles.welcomeStartPressed,
+                styles.welcomeCta,
+                pressed && styles.welcomeCtaPressed,
               ]}
               accessibilityRole="button"
               accessibilityLabel="Start using Monolog"
             >
-              <Text style={styles.welcomeStartText}>Start</Text>
+              <Text style={styles.welcomeCtaText}>Start</Text>
             </Pressable>
           </View>
         </Animated.View>
@@ -1786,7 +1814,8 @@ const styles = StyleSheet.create({
   // ── Welcome overlay ─────────────────────────────────────────────
   // Absolute-fill on the appShell column (not the whole outer window) so on
   // desktop the welcome also respects the phone-shaped column. Pure black,
-  // centered content, Start button. Cross-fades out on tap.
+  // centered content, monospace wordmark matching the landing page hero.
+  // Cross-fades out on tap.
   welcomeOverlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
@@ -1794,42 +1823,88 @@ const styles = StyleSheet.create({
     zIndex: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 28,
   },
   welcomeInner: {
     width: '100%',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
+  // Eyebrow row — small monospace label with a hairline to its left.
+  // Matches .eyebrow / .hero .eyebrow on the landing page.
+  welcomeEyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 26,
+  },
+  welcomeEyebrowHairline: {
+    width: 26,
+    height: 1,
+    backgroundColor: '#3a3a3a',
+  },
+  welcomeEyebrow: {
+    color: '#8a8a8a',
+    fontFamily: MONO,
+    fontSize: 11,
+    letterSpacing: 3.2,
+    textTransform: 'uppercase',
+    fontWeight: '400',
+  },
+  // Wordmark. Big, monospace, tight tracking. "log" gets a text-stroke
+  // outline on web (matching the landing hero h1 .stroke); on native we
+  // fall back to solid white since RN doesn't support text-stroke easily.
   welcomeTitle: {
     color: WHITE,
-    fontSize: 44,
+    fontFamily: MONO,
     fontWeight: '700',
-    textAlign: 'center',
-    lineHeight: 52,
-    letterSpacing: -1.2,
+    fontSize: 72,
+    lineHeight: 88,
+    letterSpacing: -3,
   },
-  welcomeSub: {
-    color: DIM,
-    fontSize: 14,
-    textAlign: 'center',
-    marginTop: 18,
-    letterSpacing: 0.3,
+  welcomeTitleStroke: {
+    color: 'transparent',
+    ...(Platform.OS === 'web'
+      ? { WebkitTextStroke: '2px #ffffff' as any }
+      : { color: WHITE }),
   },
-  welcomeStart: {
-    marginTop: 48,
-    paddingVertical: 14,
-    paddingHorizontal: 44,
-    borderRadius: 100,
-    borderWidth: 1,
-    borderColor: WHITE,
-    backgroundColor: 'transparent',
-  },
-  welcomeStartPressed: {
-    opacity: 0.7,
-  },
-  welcomeStartText: {
+  // Tagline — same monospace, slightly larger than body, with dim second line.
+  welcomeTagline: {
     color: WHITE,
-    fontSize: 15,
+    fontFamily: MONO,
+    fontSize: 17,
+    lineHeight: 24,
+    letterSpacing: -0.3,
+    marginTop: 24,
+  },
+  welcomeTaglineDim: {
+    color: '#8a8a8a',
+  },
+  // Micro line — tiny uppercase tracker text, sits below the tagline.
+  welcomeMicro: {
+    color: '#555555',
+    fontFamily: MONO,
+    fontSize: 11,
+    letterSpacing: 2.2,
+    textTransform: 'uppercase',
+    marginTop: 20,
+  },
+  // CTA button — pill, white background, black text, monospace uppercase.
+  // Matches .btn .btn-primary on the landing page.
+  welcomeCta: {
+    marginTop: 40,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 100,
+    backgroundColor: WHITE,
+  },
+  welcomeCtaPressed: {
+    opacity: 0.9,
+    transform: [{ translateY: -1 }],
+  },
+  welcomeCtaText: {
+    color: BLACK,
+    fontFamily: MONO,
+    fontSize: 13,
     fontWeight: '600',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
