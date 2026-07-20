@@ -20,7 +20,7 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { analyzeNote, transcribeAudio, RateLimitError } from './src/api';
+import { analyzeNote, transcribeAudio, RateLimitError, AiBusyError } from './src/api';
 import {
   canSortMore,
   getRemainingToday,
@@ -68,6 +68,179 @@ const REMINDERS_KEY = 'monolog.reminders';
 // it again on this device. Cleared if they wipe app/browser storage.
 const WELCOME_KEY = 'monolog.welcome.seen';
 
+/**
+ * Safe JSON.parse with fallback. AsyncStorage can return corrupted or
+ * truncated strings (storage quota, mid-write crash, browser extension
+ * interference). Without this wrapper, every JSON.parse call would be an
+ * uncaught-throw risk that hard-crashes the app on next launch.
+ *
+ * Returns `fallback` (default `[]`) on parse failure. Logs to console.error
+ * in dev so we can still see when something went sideways.
+ */
+function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return JSON.parse(raw) as T;
+  } catch (err) {
+    console.error('[monolog] corrupted storage, using fallback:', err);
+    return fallback;
+  }
+}
+
+/**
+ * Returns a valid Date from an ISO string, or null if the string is missing
+ * or doesn't parse to a real date. Use this anywhere we read dates back from
+ * storage (createdAt, fireAt) — those strings may have been corrupted,
+ * backfilled with bad data, or migrated from an older schema.
+ */
+function safeDate(iso: string | undefined | null): Date | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+// Open the landing page waitlist section. On web, the app is served at
+// /app/ so the landing is one level up. On native we'd need Linking.openURL
+// with the full URL — kept simple for now since this is web-first.
+function openWaitlist(): void {
+  if (IS_WEB) {
+    window.location.href = '/#waitlist';
+  }
+}
+
+// ─── Paywall Modal ──────────────────────────────────────────────
+// Shown when the user hits their 5/day free-tier limit. Styled to match
+// the landing page aesthetic: pure black card, monospace, white pill
+// primary button, ghost secondary. Mirrors index.html's .btn-primary /
+// .btn-ghost / .wl-btn visual language.
+function PaywallModal({
+  visible,
+  limit,
+  onClose,
+  onJoinWaitlist,
+}: {
+  visible: boolean;
+  limit: number;
+  onClose: () => void;
+  onJoinWaitlist: () => void;
+}) {
+  // Render nothing when invisible — avoids maintaining an off-screen layer.
+  if (!visible) return null;
+
+  return (
+    <View style={paywallStyles.overlay}>
+      <Pressable style={paywallStyles.backdrop} onPress={onClose} />
+      <View style={paywallStyles.card}>
+        <Text style={paywallStyles.eyebrow}>FREE TIER · {limit}/DAY</Text>
+        <Text style={paywallStyles.title}>That's all {limit} for today.</Text>
+        <Text style={paywallStyles.body}>
+          You've used all {limit} free sorts. They reset at midnight.
+          Need more? Paid plans (unlimited sorts, scheduled reminders, sync)
+          are coming soon.
+        </Text>
+        <View style={paywallStyles.ctaRow}>
+          <Pressable style={paywallStyles.btnPrimary} onPress={onJoinWaitlist}>
+            <Text style={paywallStyles.btnPrimaryText}>Join waitlist</Text>
+          </Pressable>
+          <Pressable style={paywallStyles.btnGhost} onPress={onClose}>
+            <Text style={paywallStyles.btnGhostText}>Not now</Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const paywallStyles = StyleSheet.create({
+  overlay: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    zIndex: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+  },
+  // Dim the app behind the modal. Separate Pressable so taps on the
+  // backdrop close the modal but taps on the card don't bubble up.
+  backdrop: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.78)',
+  },
+  card: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: BLACK,
+    borderWidth: 1,
+    borderColor: '#1f1f1f',
+    borderRadius: 14,
+    padding: 28,
+  },
+  eyebrow: {
+    fontFamily: MONO,
+    fontSize: 11,
+    letterSpacing: 2.5,
+    color: DIM,
+    marginBottom: 14,
+  },
+  title: {
+    fontFamily: MONO,
+    fontSize: 22,
+    fontWeight: '600',
+    color: WHITE,
+    letterSpacing: -0.4,
+    lineHeight: 1.15,
+    marginBottom: 14,
+  },
+  body: {
+    fontFamily: MONO,
+    fontSize: 13,
+    lineHeight: 1.55,
+    color: '#bbb',
+    marginBottom: 24,
+  },
+  ctaRow: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  btnPrimary: {
+    flex: 1,
+    minWidth: 140,
+    backgroundColor: WHITE,
+    borderRadius: 100,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnPrimaryText: {
+    fontFamily: MONO,
+    fontSize: 12,
+    letterSpacing: 1.5,
+    color: BLACK,
+    fontWeight: '600',
+  },
+  btnGhost: {
+    flex: 1,
+    minWidth: 100,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#2a2a2a',
+    borderRadius: 100,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  btnGhostText: {
+    fontFamily: MONO,
+    fontSize: 12,
+    letterSpacing: 1.5,
+    color: '#bbb',
+  },
+});
+
 // ─── Write Pad ──────────────────────────────────────────────────
 
 function WritePad({
@@ -79,6 +252,7 @@ function WritePad({
 }) {
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
+  const [paywallVisible, setPaywallVisible] = useState(false);
   const [listening, setListening] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -339,11 +513,8 @@ function WritePad({
     const canSort = await canSortMore();
     if (!canSort) {
       const remaining = await getRemainingToday();
-      Alert.alert(
-        "That's all 5 for today",
-        `You've used all ${FREE_TIER_DAILY_LIMIT} free sorts for today. They reset at midnight — or upgrade to Pro for unlimited.`,
-        [{ text: 'OK' }],
-      );
+      void remaining;
+      setPaywallVisible(true);
       return;
     }
 
@@ -370,7 +541,7 @@ function WritePad({
     let existingReminders: Reminder[] = [];
     try {
       const raw = await AsyncStorage.getItem(REMINDERS_KEY);
-      if (raw) existingReminders = JSON.parse(raw);
+      existingReminders = safeJsonParse<Reminder[]>(raw, []);
     } catch {}
 
     // ── Save logic (API + storage) ──────────────────────────────
@@ -399,9 +570,22 @@ function WritePad({
           Animated.timing(draftFade, { toValue: 1, duration: 220, useNativeDriver: false }),
           Animated.timing(savingFade, { toValue: 0, duration: 220, useNativeDriver: false }),
         ]).start();
+        setPaywallVisible(true);
+        return;
+      }
+      // ── AI temporarily unavailable (shared Groq free-tier RPM hit) ──
+      // Don't fall back to a plain note — the user wanted AI sorting and
+      // their daily quota was NOT consumed. Keep the draft, reverse the
+      // animation, and tell them to retry in a minute.
+      if (err instanceof AiBusyError) {
+        setSaving(false);
+        Animated.parallel([
+          Animated.timing(draftFade, { toValue: 1, duration: 220, useNativeDriver: false }),
+          Animated.timing(savingFade, { toValue: 0, duration: 220, useNativeDriver: false }),
+        ]).start();
         Alert.alert(
-          "That's all 5 for today",
-          `You've used all ${FREE_TIER_DAILY_LIMIT} free sorts for today. They reset at midnight — or upgrade to Pro for unlimited.`,
+          'AI is busy',
+          err.message,
           [{ text: 'OK' }],
         );
         return;
@@ -414,7 +598,7 @@ function WritePad({
         createdAt: new Date().toISOString(),
       };
       const existingNotes = await AsyncStorage.getItem(NOTES_KEY);
-      const savedNotes: Note[] = existingNotes ? JSON.parse(existingNotes) : [];
+      const savedNotes: Note[] = safeJsonParse<Note[]>(existingNotes, []);
       savedNotes.unshift(note);
       await AsyncStorage.setItem(NOTES_KEY, JSON.stringify(savedNotes));
       onNoteCreated();
@@ -461,7 +645,7 @@ function WritePad({
             remindBeforeMinutes: result.reminder!.remindBeforeMinutes,
           };
           const existing = await AsyncStorage.getItem(REMINDERS_KEY);
-          const reminders: Reminder[] = existing ? JSON.parse(existing) : [];
+          const reminders: Reminder[] = safeJsonParse<Reminder[]>(existing, []);
           reminders.unshift(reminder);
           await AsyncStorage.setItem(REMINDERS_KEY, JSON.stringify(reminders));
           onReminderCreated();
@@ -498,16 +682,21 @@ function WritePad({
               remindBeforeMinutes: result.modify?.remindBeforeMinutes ?? result.reminder?.remindBeforeMinutes,
             };
             const existing = await AsyncStorage.getItem(REMINDERS_KEY);
-            const reminders: Reminder[] = existing ? JSON.parse(existing) : [];
+            const reminders: Reminder[] = safeJsonParse<Reminder[]>(existing, []);
             reminders.unshift(reminder);
             await AsyncStorage.setItem(REMINDERS_KEY, JSON.stringify(reminders));
             onReminderCreated();
           } else {
             // Cancel old notifications
             try { await cancelReminder(target.notificationId); } catch {}
-            // Apply modify fields
+            // Apply modify fields. Fall back to a 1-minute-from-now fire
+            // time if both mod.datetime and target.fireAt are unparseable
+            // (storage corruption edge case — should never happen, but
+            // crashing here would be worse than guessing).
             const mod = result.modify || {};
-            const newFireAt = mod.datetime ? new Date(mod.datetime) : new Date(target.fireAt);
+            const fromMod = safeDate(mod.datetime);
+            const fromTarget = safeDate(target.fireAt);
+            const newFireAt = fromMod ?? fromTarget ?? new Date(Date.now() + 60_000);
             const newRecurring = mod.recurring || target.recurring;
             const newDaysOfWeek = mod.daysOfWeek !== undefined ? mod.daysOfWeek : target.daysOfWeek;
             const newRemindBefore = mod.remindBeforeMinutes ?? target.remindBeforeMinutes;
@@ -585,7 +774,7 @@ function WritePad({
             createdAt: new Date().toISOString(),
           };
           const existingNotes = await AsyncStorage.getItem(NOTES_KEY);
-          const savedNotes: Note[] = existingNotes ? JSON.parse(existingNotes) : [];
+          const savedNotes: Note[] = safeJsonParse<Note[]>(existingNotes, []);
           savedNotes.unshift(note);
           await AsyncStorage.setItem(NOTES_KEY, JSON.stringify(savedNotes));
           onNoteCreated();
@@ -764,6 +953,16 @@ function WritePad({
           </View>
         )}
       </View>
+
+      <PaywallModal
+        visible={paywallVisible}
+        limit={FREE_TIER_DAILY_LIMIT}
+        onClose={() => setPaywallVisible(false)}
+        onJoinWaitlist={() => {
+          setPaywallVisible(false);
+          openWaitlist();
+        }}
+      />
     </RootWrapper>
   );
 }
@@ -871,7 +1070,8 @@ function RemindersPad({
   //   lost its date picker. Title-only editing now.)
 
   const formatDate = (iso: string) => {
-    const d = new Date(iso);
+    const d = safeDate(iso);
+    if (!d) return '—'; // corrupted fireAt — show em-dash instead of 'Invalid Date'
     const opts: Intl.DateTimeFormatOptions = {
       month: 'short',
       day: 'numeric',
@@ -882,7 +1082,8 @@ function RemindersPad({
   };
 
   const formatNoteDate = (iso: string) => {
-    const d = new Date(iso);
+    const d = safeDate(iso);
+    if (!d) return '—';
     const opts: Intl.DateTimeFormatOptions = {
       month: 'short',
       day: 'numeric',
@@ -1503,7 +1704,7 @@ function MonthView({
                             </Text>
                             {!hovered && (
                               <Text style={styles.noteDate}>
-                                {new Date(n.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                {safeDate(n.createdAt)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? '—'}
                               </Text>
                             )}
                           </View>
@@ -1630,7 +1831,7 @@ function AppInner({ tab, setTab }: { tab: 'write' | 'reminders' | 'calendar'; se
   const loadReminders = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem(REMINDERS_KEY);
-      if (raw) setReminders(JSON.parse(raw));
+      setReminders(safeJsonParse<Reminder[]>(raw, []));
     } catch {}
   }, []);
 
@@ -1638,7 +1839,7 @@ function AppInner({ tab, setTab }: { tab: 'write' | 'reminders' | 'calendar'; se
   const loadNotes = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem(NOTES_KEY);
-      if (raw) setNotes(JSON.parse(raw));
+      setNotes(safeJsonParse<Note[]>(raw, []));
     } catch {}
   }, []);
 

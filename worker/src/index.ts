@@ -8,6 +8,10 @@ interface Env {
   GROQ_API_KEY: string;
   WAITLIST: KVNamespace;
   RATELIMIT: KVNamespace;
+  // Admin panel Basic Auth credentials — set via `wrangler secret put`.
+  // Never hard-code these in the worker source; they would land in git.
+  ADMIN_USER: string;
+  ADMIN_PASS: string;
 }
 
 interface AnalyzeResponse {
@@ -78,20 +82,57 @@ function buildCorsHeaders(origin: string | null): Record<string, string> {
   };
 }
 
+// ── Client IP lookup ────────────────────────────────────────────
+// CF-Connecting-IP is set by Cloudflare's edge and CANNOT be spoofed by
+// the client — it's overwritten at the edge before our worker sees it.
+// We intentionally do NOT fall back to X-Forwarded-For: that header is
+// client-controlled and trivially spoofable, which would let an attacker
+// rotate fake IPs to bypass per-IP rate limits.
+function getClientIp(request: Request): string {
+  return request.headers.get('CF-Connecting-IP') ?? 'unknown';
+}
+
+// ── Free-tier daily limit ───────────────────────────────────────
+// Shared across /analyze and /transcribe (5 combined AI calls/day per IP).
+// Defined once here so both routes reference the same source of truth.
+const FREE_TIER_DAILY_LIMIT_GLOBAL = 5;
+
+/** Increment the per-IP daily counter. No-op on storage failure. */
+async function bumpDailyCounter(env: Env, ip: string, current: number): Promise<void> {
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const rlKey = `rl:${ip}:${todayKey}`;
+  const next = current + 1;
+  if (current === 0) {
+    await env.RATELIMIT.put(rlKey, String(next), { expirationTtl: 60 * 60 * 48 });
+  } else {
+    await env.RATELIMIT.put(rlKey, String(next));
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const corsHeaders = buildCorsHeaders(request.headers.get('Origin'));
+    const origin = request.headers.get('Origin');
 
+    // ── CORS preflight ──────────────────────────────────────────
     if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: corsHeaders });
+      return new Response(null, { headers: buildCorsHeaders(origin) });
     }
 
-    if (request.method !== 'POST') {
-      return new Response(JSON.stringify({ error: 'POST only' }), {
-        status: 405,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+    // ── Hard-reject bad origins BEFORE doing any work ───────────
+    // Why: returning no ACAO header only blocks the browser from
+    // READING the response — the request still runs, calls Groq,
+    // writes to KV, and burns our quota. A malicious page can fire
+    // many no-cors POSTs and silently drain us. So we 403 here for
+    // any non-allowlisted origin when one is present.
+    // (We allow missing Origin so curl/native apps still work.)
+    if (origin && !ALLOWED_ORIGINS.has(origin)) {
+      return new Response(JSON.stringify({ error: 'forbidden origin' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', Vary: 'Origin' },
       });
     }
+
+    const corsHeaders = buildCorsHeaders(origin);
 
     // Top-level catcher so Cloudflare never shows a raw 1101. We log only
     // a generic message — never raw error details that could leak internals
@@ -124,10 +165,20 @@ async function handleRequest(
       });
     }
 
+    const url = new URL(request.url);
+
+    // ── Route: /admin (Basic Auth) ──────────────────────────────
+    // Returns waitlist entries as JSON for the admin dashboard.
+    // Auth uses HTTP Basic over HTTPS (Cloudflare always terminates TLS).
+    // Credentials come from env secrets — never from source. If the
+    // secrets aren't set, we return 401 forever (fail-closed).
+    if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) {
+      return handleAdmin(request, env, corsHeaders);
+    }
+
     // ── Route: /waitlist ─────────────────────────────────────────
     // Accepts { email } → stores in KV keyed by normalized email.
     // Idempotent: re-submitting the same email returns ok without duplicating.
-    const url = new URL(request.url);
     if (url.pathname === '/waitlist') {
       if (request.method !== 'POST') {
         return new Response(JSON.stringify({ error: 'POST only' }), {
@@ -165,9 +216,7 @@ async function handleRequest(
       // fill our KV with garbage. 5 signups per IP per hour is plenty for
       // a real human (typo-retries, multiple emails) but blocks flooding.
       // Uses a separate key prefix so it doesn't collide with /analyze counters.
-      const wlIp = request.headers.get('CF-Connecting-IP')
-        ?? request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim()
-        ?? 'unknown';
+      const wlIp = getClientIp(request);
       const wlHourKey = `wl-rl:${wlIp}:${Math.floor(Date.now() / 3_600_000)}`; // bucket = hour
       const wlCount = parseInt((await env.RATELIMIT.get(wlHourKey)) ?? '0', 10);
       if (wlCount >= 5) {
@@ -212,7 +261,46 @@ async function handleRequest(
 
     // ── Route: /transcribe ──────────────────────────────────────
     if (url.pathname === '/transcribe') {
-      const formData = await request.formData();
+      // ── Per-IP daily cap on transcriptions ─────────────────────
+      // Whisper is more expensive than /analyze (audio vs text) so we
+      // share the same 5/day free-tier bucket. Stops abuse where someone
+      // uploads huge audio files to burn Groq credits.
+      const tIp = getClientIp(request);
+      const tTodayKey = new Date().toISOString().slice(0, 10);
+      const tRlKey = `rl:${tIp}:${tTodayKey}`;
+      const tCurrent = parseInt((await env.RATELIMIT.get(tRlKey)) ?? '0', 10);
+      if (tCurrent >= FREE_TIER_DAILY_LIMIT_GLOBAL) {
+        return new Response(JSON.stringify({
+          error: 'rate_limited',
+          message: `That's all ${FREE_TIER_DAILY_LIMIT_GLOBAL} for today. Try again tomorrow.`,
+          limit: FREE_TIER_DAILY_LIMIT_GLOBAL,
+          used: tCurrent,
+        }), {
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'Retry-After': '86400',
+            ...corsHeaders,
+          },
+        });
+      }
+
+      // formData() throws on: empty body, wrong Content-Type, malformed
+      // multipart. Without this catch the worker returns 500 (top-level
+      // catcher), which is misleading — 400 tells the client they sent
+      // something wrong, not that we crashed.
+      let formData: FormData;
+      try {
+        formData = await request.formData();
+      } catch {
+        return new Response(JSON.stringify({
+          error: 'invalid form data',
+          message: 'Expected multipart/form-data with a "file" field.',
+        }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
       const file = formData.get('file');
       if (!file || !(file instanceof File)) {
         return new Response(JSON.stringify({ error: 'file is required' }), {
@@ -270,14 +358,31 @@ async function handleRequest(
       });
 
       if (!groqRes.ok) {
-        const err = await groqRes.text();
-        return new Response(JSON.stringify({ error: `Groq Whisper error: ${err}` }), {
+        // Whisper also rate-limits on the shared Groq quota — surface as
+        // ai_busy so the client can retry gracefully instead of looking
+        // broken. Don't leak Groq's error body (could contain internals).
+        if (groqRes.status === 429) {
+          return new Response(JSON.stringify({
+            error: 'ai_busy',
+            message: 'AI is busy right now. Try again in a minute.',
+          }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json', 'Retry-After': '60', ...corsHeaders },
+          });
+        }
+        console.error('Groq Whisper error:', groqRes.status, (await groqRes.text()).slice(0, 500));
+        return new Response(JSON.stringify({
+          error: 'transcription_failed',
+          message: 'Transcription service is having issues. Try again.',
+        }), {
           status: 502,
           headers: { 'Content-Type': 'application/json', ...corsHeaders },
         });
       }
 
       const data = await groqRes.json() as { text?: string };
+      // Successful transcribe — count against the shared daily quota.
+      await bumpDailyCounter(env, tIp, tCurrent);
       return new Response(JSON.stringify({ text: data.text ?? '' }), {
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
@@ -293,18 +398,19 @@ async function handleRequest(
     // clear storage to bypass the limit. KV is eventually-consistent so
     // a determined abuser could squeeze 1-2 extra requests in under
     // heavy concurrent load; that's an acceptable tradeoff for a free tier.
-    const FREE_TIER_DAILY_LIMIT = 5;
-    const ip = request.headers.get('CF-Connecting-IP')
-      ?? request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim()
-      ?? 'unknown';
+    //
+    // IMPORTANT: the increment happens AFTER a successful Groq response
+    // (see bottom of this block). If Groq is down/overloaded, we don't
+    // burn the user's daily quota for a failure they didn't cause.
+    const ip = getClientIp(request);
     const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
     const rlKey = `rl:${ip}:${todayKey}`;
     const current = parseInt((await env.RATELIMIT.get(rlKey)) ?? '0', 10);
-    if (current >= FREE_TIER_DAILY_LIMIT) {
+    if (current >= FREE_TIER_DAILY_LIMIT_GLOBAL) {
       return new Response(JSON.stringify({
         error: 'rate_limited',
-        message: `Free tier limit reached (${FREE_TIER_DAILY_LIMIT}/day). Try again tomorrow or upgrade to Pro for unlimited.`,
-        limit: FREE_TIER_DAILY_LIMIT,
+        message: `That's all ${FREE_TIER_DAILY_LIMIT_GLOBAL} for today. Try again tomorrow.`,
+        limit: FREE_TIER_DAILY_LIMIT_GLOBAL,
         used: current,
       }), {
         status: 429,
@@ -314,14 +420,6 @@ async function handleRequest(
           ...corsHeaders,
         },
       });
-    }
-    // Increment + set TTL (only on the first hit do we set the TTL — saves
-    // a KV write on subsequent requests the same day).
-    const next = current + 1;
-    if (current === 0) {
-      await env.RATELIMIT.put(rlKey, String(next), { expirationTtl: 60 * 60 * 48 });
-    } else {
-      await env.RATELIMIT.put(rlKey, String(next));
     }
 
     const body = await request.json() as { text?: string; timezoneOffset?: number; reminders?: { id: string; title: string }[] };
@@ -448,9 +546,30 @@ Match the user's text to an existing reminder by KEYWORD in the title. E.g., "gy
         }),
       });
 
+      // ── Groq rate-limited (free tier 30 RPM shared globally) ───
+      // Return a distinct error code so the client can show "AI is busy,
+      // try again in a minute" instead of looking broken. Do NOT burn
+      // the user's daily quota for this — they didn't get a result.
+      if (groqRes.status === 429) {
+        return new Response(JSON.stringify({
+          error: 'ai_busy',
+          message: 'AI is busy right now. Try again in a minute.',
+        }), {
+          status: 503,
+          headers: { 'Content-Type': 'application/json', 'Retry-After': '60', ...corsHeaders },
+        });
+      }
+
       if (!groqRes.ok) {
+        // Log full body server-side, return generic to client — error
+        // bodies from Groq can include our API key fragments or other
+        // internal info we don't want to leak.
         const errBody = await groqRes.text();
-        return new Response(JSON.stringify({ error: `Groq error: ${errBody}` }), {
+        console.error('Groq /analyze error:', groqRes.status, errBody.slice(0, 500));
+        return new Response(JSON.stringify({
+          error: 'ai_error',
+          message: 'AI service is having issues. Try again.',
+        }), {
           status: 502,
           headers: { 'Content-Type': 'application/json', ...corsHeaders },
         });
@@ -459,7 +578,10 @@ Match the user's text to an existing reminder by KEYWORD in the title. E.g., "gy
       const data = await groqRes.json() as { choices?: { message?: { content?: string } }[] };
       const content = data.choices?.[0]?.message?.content;
       if (!content) {
-        return new Response(JSON.stringify({ error: 'Groq returned empty' }), {
+        return new Response(JSON.stringify({
+          error: 'ai_empty',
+          message: 'AI returned an empty response. Try again.',
+        }), {
           status: 502,
           headers: { 'Content-Type': 'application/json', ...corsHeaders },
         });
@@ -472,14 +594,380 @@ Match the user's text to an existing reminder by KEYWORD in the title. E.g., "gy
         if (match) json = match[1];
       }
 
-      const result: AnalyzeResponse = JSON.parse(json);
+      let result: AnalyzeResponse;
+      try {
+        result = JSON.parse(json);
+      } catch {
+        // LLM produced malformed JSON. Don't leak the raw content back.
+        console.error('Groq returned malformed JSON:', json.slice(0, 500));
+        return new Response(JSON.stringify({
+          error: 'ai_parse_error',
+          message: 'AI response was malformed. Try again.',
+        }), {
+          status: 502,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+
+      // ── SUCCESS — now count this against the user's daily quota ──
+      // Only increment after we have a valid result. Failures (Groq
+      // errors, malformed JSON, empty responses) do NOT consume quota.
+      await bumpDailyCounter(env, ip, current);
+
       return new Response(JSON.stringify(result), {
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     } catch (err) {
-      return new Response(JSON.stringify({ error: err instanceof Error ? err.message : 'Unknown error' }), {
+      // Catch-all for unexpected errors (network, etc). Don't leak details.
+      console.error('Analyze unexpected error:', err instanceof Error ? err.message : String(err));
+      return new Response(JSON.stringify({
+        error: 'internal_error',
+        message: 'Something went wrong. Try again.',
+      }), {
         status: 500,
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
 }
+
+// ── Admin handler ───────────────────────────────────────────────
+// Serves internal endpoints for the waitlist dashboard. All paths under
+// /admin require HTTP Basic Auth with credentials stored in env secrets.
+//
+// Endpoints:
+//   GET /admin/waitlist  → { count, entries: [{ email, at, ua, ref }] }
+//   GET /admin/health    → { ok: true }  (auth check, no KV read)
+//   anything else        → 404
+//
+// Why Basic Auth: the admin.html page runs in the browser and needs a
+// stateless auth mechanism that works with fetch(). We could do a cookie
+// flow, but Basic over HTTPS is simpler, well-understood, and impossible
+// to get wrong with CSRF. Credentials live in Cloudflare secrets.
+//
+// CORS: admin endpoints intentionally return NO ACAO header. The dashboard
+// on mono-log-web.vercel.app could read it via CORS, but for now we keep
+// the admin page server-rendered (worker returns HTML) so there's no
+// cross-origin request at all — admin.html is opened directly from the
+// worker URL. This is simpler and avoids exposing the endpoint via CORS.
+async function handleAdmin(
+  request: Request,
+  env: Env,
+  corsHeaders: Record<string, string>,
+): Promise<Response> {
+  const jsonHeaders = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
+
+  // Fail-closed: if secrets aren't set, refuse all access.
+  if (!env.ADMIN_USER || !env.ADMIN_PASS) {
+    return new Response(JSON.stringify({ error: 'admin not configured' }), {
+      status: 500,
+      headers: jsonHeaders,
+    });
+  }
+
+  // Validate Basic Auth header.
+  const authHeader = request.headers.get('Authorization') ?? '';
+  const match = authHeader.match(/^Basic\s+(.+)$/i);
+  if (!match) {
+    return unauthorizedResponse();
+  }
+
+  let decoded: string;
+  try {
+    decoded = atob(match[1]);
+  } catch {
+    return unauthorizedResponse();
+  }
+
+  // Decode is "user:pass". Use indexOf (not split) — passwords may contain ':'.
+  const colonIdx = decoded.indexOf(':');
+  if (colonIdx === -1) {
+    return unauthorizedResponse();
+  }
+  const user = decoded.slice(0, colonIdx);
+  const pass = decoded.slice(colonIdx + 1);
+
+  // Constant-time-ish comparison to avoid trivial timing attacks.
+  // Not a true constant-time impl but better than `===` on attacker-controlled input.
+  if (!timingSafeEqual(user, env.ADMIN_USER) || !timingSafeEqual(pass, env.ADMIN_PASS)) {
+    return unauthorizedResponse();
+  }
+
+  const url = new URL(request.url);
+
+  // GET /admin → serve the admin dashboard HTML.
+  // We bundle it here so deployment is single-file (no separate asset upload).
+  if (url.pathname === '/admin' && request.method === 'GET') {
+    return new Response(ADMIN_HTML, {
+      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    });
+  }
+
+  // GET /admin/health → simple auth check, no KV read.
+  if (url.pathname === '/admin/health' && request.method === 'GET') {
+    return new Response(JSON.stringify({ ok: true }), { headers: jsonHeaders });
+  }
+
+  // GET /admin/waitlist → all entries from KV.
+  if (url.pathname === '/admin/waitlist' && request.method === 'GET') {
+    const list = await env.WAITLIST.list({ prefix: 'email:' });
+    const entries: unknown[] = [];
+    // list() returns keys+metadata but not values. Fetch values in parallel.
+    // KV list returns up to 1000 keys per page — paginate if needed.
+    let cursor: string | undefined;
+    do {
+      const page = await env.WAITLIST.list({ prefix: 'email:', cursor });
+      const values = await Promise.all(
+        page.keys.map(async (k) => {
+          const raw = await env.WAITLIST.get(k.name);
+          if (!raw) return null;
+          try { return JSON.parse(raw); } catch { return null; }
+        }),
+      );
+      for (const v of values) {
+        if (v) entries.push(v);
+      }
+      cursor = page.list_complete ? undefined : page.cursor;
+    } while (cursor);
+
+    // Sort newest-first by `at` timestamp if present.
+    entries.sort((a, b) => {
+      const atA = (a as { at?: string })?.at ?? '';
+      const atB = (b as { at?: string })?.at ?? '';
+      return atB.localeCompare(atA);
+    });
+
+    return new Response(JSON.stringify({ count: entries.length, entries }), {
+      headers: jsonHeaders,
+    });
+  }
+
+  return new Response(JSON.stringify({ error: 'not found' }), {
+    status: 404,
+    headers: jsonHeaders,
+  });
+}
+
+function unauthorizedResponse(): Response {
+  return new Response(JSON.stringify({ error: 'unauthorized' }), {
+    status: 401,
+    headers: {
+      'Content-Type': 'application/json',
+      'WWW-Authenticate': 'Basic realm="monolog-admin"',
+    },
+  });
+}
+
+// String compare that doesn't short-circuit on first mismatched byte.
+// Length mismatch always returns false. Good enough for credential checks
+// — not a true constant-time impl but raises the bar over `===`.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+// ── Admin dashboard HTML (embedded as a string) ─────────────────
+// Plain HTML + CSS + vanilla JS — no build step, no React. Fetches
+// /admin/waitlist with the Basic auth header the browser already has
+// cached from this session. Charts are hand-rolled SVG/CSS in the
+// bklit aesthetic (monospace, dark, minimal).
+const ADMIN_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>monolog · admin</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --panel: #131313;
+    --text: #e8e8e8;
+    --dim: #777;
+    --line: #1f1f1f;
+    --accent: #fff;
+    --mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--mono);
+    margin: 0;
+    padding: 32px 20px 80px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  h1 {
+    font-size: 14px; letter-spacing: 0.15em; text-transform: uppercase;
+    color: var(--dim); margin: 0 0 4px; font-weight: 500;
+  }
+  h1 strong { color: var(--text); font-weight: 600; }
+  .sub { color: var(--dim); font-size: 12px; margin-bottom: 32px; }
+  .grid {
+    display: grid; gap: 16px; margin-bottom: 32px;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  }
+  .stat {
+    border: 1px solid var(--line); padding: 16px 18px; background: var(--panel);
+  }
+  .stat .label {
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 8px;
+  }
+  .stat .value { font-size: 28px; font-weight: 500; }
+  .stat .delta { font-size: 11px; color: var(--dim); margin-top: 4px; }
+  .chart-card {
+    border: 1px solid var(--line); padding: 20px; background: var(--panel);
+    margin-bottom: 16px;
+  }
+  .chart-title {
+    font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 16px;
+  }
+  .bars { display: flex; align-items: flex-end; gap: 4px; height: 100px; }
+  .bar {
+    flex: 1; background: var(--text); min-height: 2px;
+    transition: height 0.3s ease;
+  }
+  .bar:hover { background: #fff; }
+  .x-axis {
+    display: flex; gap: 4px; margin-top: 8px;
+    font-size: 10px; color: var(--dim);
+  }
+  .x-axis span { flex: 1; text-align: center; }
+  table {
+    width: 100%; border-collapse: collapse;
+    font-size: 13px;
+  }
+  th, td {
+    text-align: left; padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  th {
+    color: var(--dim); font-weight: 500; font-size: 11px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+  }
+  td.email { color: var(--text); }
+  td.date, td.ua { color: var(--dim); font-size: 11px; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .empty { color: var(--dim); padding: 32px; text-align: center; font-size: 12px; }
+  .refresh {
+    background: transparent; border: 1px solid var(--line); color: var(--text);
+    font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em;
+    text-transform: uppercase; padding: 8px 14px; cursor: pointer;
+  }
+  .refresh:hover { border-color: var(--text); }
+  .actions { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .err { color: #e66; font-size: 12px; padding: 16px; border: 1px solid #421; background: #1a0e0e; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>monolog · <strong>admin</strong></h1>
+  <div class="sub" id="sub">loading…</div>
+
+  <div class="grid">
+    <div class="stat"><div class="label">total signups</div><div class="value" id="total">—</div><div class="delta" id="totalDelta"></div></div>
+    <div class="stat"><div class="label">last 24h</div><div class="value" id="last24">—</div></div>
+    <div class="stat"><div class="label">last 7d</div><div class="value" id="last7">—</div></div>
+    <div class="stat"><div class="label">avg/day (7d)</div><div class="value" id="avg">—</div></div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">signups · last 14 days</div>
+    <div class="bars" id="bars"></div>
+    <div class="x-axis" id="xaxis"></div>
+  </div>
+
+  <div class="actions">
+    <div class="chart-title" style="margin: 0;">all signups</div>
+    <button class="refresh" id="refreshBtn">refresh</button>
+  </div>
+  <div id="table-wrap"></div>
+</div>
+
+<script>
+  async function load() {
+    try {
+      const res = await fetch('/admin/waitlist', { credentials: 'include' });
+      if (res.status === 401) {
+        document.getElementById('sub').textContent = 'unauthorized — close this tab and re-open with the auth URL';
+        return;
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      render(data.entries || []);
+    } catch (e) {
+      const wrap = document.getElementById('table-wrap');
+      wrap.innerHTML = '<div class="err">failed to load: ' + (e.message || e) + '</div>';
+    }
+  }
+
+  function dayKey(iso) {
+    return new Date(iso).toISOString().slice(0, 10);
+  }
+
+  function render(entries) {
+    const now = new Date();
+    const cutoff24 = now.getTime() - 24 * 3600 * 1000;
+    const cutoff7 = now.getTime() - 7 * 24 * 3600 * 1000;
+
+    const total = entries.length;
+    const last24 = entries.filter(e => new Date(e.at).getTime() >= cutoff24).length;
+    const last7 = entries.filter(e => new Date(e.at).getTime() >= cutoff7).length;
+
+    document.getElementById('total').textContent = total.toLocaleString();
+    document.getElementById('last24').textContent = last24.toLocaleString();
+    document.getElementById('last7').textContent = last7.toLocaleString();
+    document.getElementById('avg').textContent = (last7 / 7).toFixed(1);
+
+    const newest = entries[0]?.at;
+    document.getElementById('sub').textContent = newest
+      ? 'updated ' + new Date().toLocaleTimeString() + ' · newest ' + new Date(newest).toLocaleString()
+      : 'no signups yet';
+
+    // 14-day bar chart
+    const days = [];
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 24 * 3600 * 1000);
+      const key = d.toISOString().slice(0, 10);
+      const count = entries.filter(e => dayKey(e.at) === key).length;
+      days.push({ key, count, label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) });
+    }
+    const max = Math.max(1, ...days.map(d => d.count));
+    document.getElementById('bars').innerHTML = days.map(d =>
+      '<div class="bar" style="height: ' + (d.count / max * 100) + '%; background: ' + (d.count === 0 ? '#222' : '#e8e8e8') + ';" title="' + d.count + ' on ' + d.label + '"></div>'
+    ).join('');
+    document.getElementById('xaxis').innerHTML = days.map(d => '<span>' + d.label.split(' ')[1] + '</span>').join('');
+
+    // Table
+    const wrap = document.getElementById('table-wrap');
+    if (entries.length === 0) {
+      wrap.innerHTML = '<div class="empty">no signups yet</div>';
+      return;
+    }
+    let rows = '';
+    for (const e of entries) {
+      const email = escapeHtml(e.email || '');
+      const date = e.at ? new Date(e.at).toLocaleString() : '—';
+      const ua = escapeHtml(e.ua || '');
+      const ref = escapeHtml(e.ref || '');
+      rows += '<tr><td class="email">' + email + '</td><td class="date">' + date + '</td><td class="date">' + (ref || '—') + '</td><td class="ua">' + (ua || '—') + '</td></tr>';
+    }
+    wrap.innerHTML = '<table><thead><tr><th>email</th><th>signed up</th><th>ref</th><th>ua</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  document.getElementById('refreshBtn').addEventListener('click', load);
+  load();
+</script>
+</body>
+</html>`;

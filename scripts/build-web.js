@@ -112,6 +112,13 @@ if (fs.existsSync(FONTS_DIR)) {
     }
   }
   log(`Injected ${familyMap.size} @font-face rules for icon fonts (+ preload for Ionicons)`);
+
+  // Loud warning if no fonts were found — icons would silently break in
+  // production with zero indication in build output. This catches Expo
+  // version bumps that shift the font directory path.
+  if (familyMap.size === 0) {
+    console.warn('\x1b[33m⚠️  [build-web] WARNING: No icon fonts found at ' + FONTS_DIR + '. Icons will not render in production. Verify @expo/vector-icons is installed and the path is correct for your Expo version.\x1b[0m');
+  }
 }
 
 // Kill the browser's default focus outline on inputs/textareas so typing

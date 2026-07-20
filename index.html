@@ -416,6 +416,22 @@ strong{color:#fff;font-weight:600}
   font-family:var(--mono);font-size:.66rem;letter-spacing:.14em;
   text-transform:uppercase;color:var(--gray);
 }
+/* "Coming soon" badge for paid tiers that aren't wired up yet. */
+.coming-soon-badge{
+  display:inline-block;font-family:var(--mono);
+  font-size:.6rem;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--gray-bright);border:1px solid var(--hairline-hi);
+  padding:4px 10px;border-radius:100px;margin-bottom:14px;
+}
+/* Disabled-looking CTA when plan isn't purchasable yet. */
+.btn-cta-soon{
+  width:100%;justify-content:center;
+  font-family:var(--mono);font-size:.74rem;letter-spacing:.12em;text-transform:uppercase;
+  display:inline-flex;align-items:center;gap:.6em;
+  padding:1.05em 1.7em;border-radius:100px;
+  border:1px dashed var(--hairline-hi);background:transparent;
+  color:var(--gray-bright);cursor:not-allowed;
+}
 
 /* ============================================================
    CTA / FOOTER
@@ -765,7 +781,7 @@ strong{color:#fff;font-weight:600}
             <span class="app-send"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></span>
           </div>
           <div class="app-pad">
-            <div class="app-write-text">remind me to text<br>sam back friday 9am</div>
+            <div class="app-write-text">type your thought<span class="ph">…</span></div>
           </div>
           <!-- nav: calendar / create(on) / notifications -->
           <nav class="app-nav">
@@ -938,11 +954,11 @@ strong{color:#fff;font-weight:600}
     </div>
     <div class="faq-item">
       <h3><span class="qnum">04</span>What about Android?</h3>
-      <p>Web works perfectly in any browser (iPhone, Android, laptop, tablet). Native app launches on iOS first because it's a one-person team and prioritizing one platform means shipping something polished instead of two things that feel broken. Android is on the roadmap; join the waitlist to be notified.</p>
+      <p>Web works in any browser (iPhone, Android, laptop, tablet). Notes and AI sorting work everywhere; reminders fire while the tab is open, and a native iOS app is coming for reliable background notifications. iOS launches first because it's a one-person team — better to ship one polished thing than two broken ones. Android is on the roadmap; join the waitlist to be notified.</p>
     </div>
     <div class="faq-item">
       <h3><span class="qnum">05</span>Can I export my notes?</h3>
-      <p>Right now: copy and paste works (it's just text). A proper export feature (.txt, .json, or sync to a cloud service) is on the roadmap. Your notes are yours, so when export ships it'll be free for everyone — not a paid-only feature.</p>
+      <p>Right now: copy and paste works (it's just text). A proper export feature (.txt, .json, or sync to a cloud service) is on the roadmap. Your notes are yours, so when export ships it'll be free for everyone.</p>
     </div>
   </div>
 </section>
@@ -970,6 +986,7 @@ strong{color:#fff;font-weight:600}
 
     <!-- MONTHLY (featured — middle tier draws the eye) -->
     <div class="price-card is-featured">
+      <span class="coming-soon-badge">Coming soon</span>
       <p class="plan-name">Pro · Monthly</p>
       <div class="price-block">
         <p class="price">$4.99</p>
@@ -977,12 +994,13 @@ strong{color:#fff;font-weight:600}
       </div>
       <p class="benefit">Unlimited sorting. For people who think a lot.</p>
       <div class="price-cta">
-        <a class="btn btn-primary" href="/app/">Get Pro</a>
+        <a class="btn-cta-soon" href="#waitlist">Notify me</a>
       </div>
     </div>
 
     <!-- YEARLY — for believers, ~2 months free -->
     <div class="price-card">
+      <span class="coming-soon-badge">Coming soon</span>
       <p class="plan-name">Pro · Yearly</p>
       <div class="price-block">
         <p class="price">$49</p>
@@ -990,22 +1008,22 @@ strong{color:#fff;font-weight:600}
       </div>
       <p class="benefit">Same Pro, cheaper if you're staying. For the long-haulers.</p>
       <div class="price-cta">
-        <a class="btn btn-ghost" href="/app/">Get Pro</a>
+        <a class="btn-cta-soon" href="#waitlist">Notify me</a>
       </div>
     </div>
 
   </div>
 
-  <p class="price-foot" data-reveal>Cancel anytime. · Runs in your browser on iPhone today. · Native iOS coming soon.</p>
+  <p class="price-foot" data-reveal>Runs in your browser on iPhone today. · Native iOS + paid plans in the works.</p>
 </section>
 
 <!-- ===================== WAITLIST ===================== -->
-<section class="section wrap" id="waitlist">
-  <p class="eyebrow" data-reveal>iOS is coming</p>
+<section class="section wrap" id="waitlist" style="text-align:center">
+  <p class="eyebrow" data-reveal style="justify-content:center">iOS is coming</p>
   <h2 class="title" data-reveal>Get Monolog. <span class="dim">First.</span></h2>
-  <p class="lead" data-reveal style="margin-top:6px">Be among the first 100 to get early access. We'll email you the moment iOS launches — no spam, no newsletter, just the one ping.</p>
+  <p class="lead" data-reveal style="margin:6px auto 0;max-width:62ch">Drop your email — we'll ping you the moment iOS launches and the moment paid plans go live. No spam, no newsletter, just the one ping.</p>
 
-  <form class="wl-row" id="wl-form" autocomplete="on" novalidate data-reveal style="margin-top:30px;max-width:520px">
+  <form class="wl-row" id="wl-form" autocomplete="on" novalidate data-reveal style="margin:30px auto 0;max-width:520px">
     <input
       class="wl-input"
       type="email"
@@ -1032,7 +1050,7 @@ strong{color:#fff;font-weight:600}
         <span>Open the web app</span>
       </a>
     </div>
-    <p class="note" style="margin-top:22px">Native iOS coming soon. Web works perfectly on mobile &amp; desktop today.</p>
+    <p class="note" style="margin-top:22px">Native iOS coming soon. Web works on mobile &amp; desktop today (reminders fire while the tab is open).</p>
   </div>
 </section>
 
