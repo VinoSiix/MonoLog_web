@@ -619,6 +619,7 @@ function WritePad({
         </View>
 
         <KeyboardAvoidingView
+          className="tab-content"
           style={styles.pad}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
@@ -877,6 +878,7 @@ function RemindersPad({
     <View style={{ flex: 1 }}>
         <ScrollView
             ref={scrollRef}
+            className="tab-content"
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingHorizontal: 22, paddingBottom: 220 }}
             keyboardShouldPersistTaps="handled"
@@ -1285,32 +1287,36 @@ function MonthView({
         {/* On web, cap the calendar content width so cells don't balloon on
             wide desktop/tablet viewports. On native, full width is correct. */}
         <View style={IS_WEB ? styles.calWebWrap : undefined}>
-        {/* Month nav */}
-        <View style={styles.monthNav}>
-          <Pressable onPress={prevMonth} hitSlop={10}>
-            <Ionicons name="chevron-back" size={20} color={WHITE} />
-          </Pressable>
-          <Text style={styles.monthLabel}>{monthLabel}</Text>
-          <Pressable onPress={nextMonth} hitSlop={10}>
-            <Ionicons name="chevron-forward" size={20} color={WHITE} />
-          </Pressable>
-        </View>
-
-        <Animated.View style={{ transform: [{ translateX: slideAnim }] }}>
-          {/* Day-of-week headers */}
-          <View style={styles.calRow}>
-            {[{ l: 'Su' }, { l: 'M' }, { l: 'T' }, { l: 'W' }, { l: 'Th' }, { l: 'F' }, { l: 'Sa' }].map(({ l }) => (
-              <View key={l} style={styles.calDayHead}>
-                <Text style={styles.calDayHeadText}>{l}</Text>
-              </View>
-            ))}
+        {/* cal-split: stack on mobile, side-by-side on desktop (via CSS class). */}
+        <View className="cal-split">
+          {/* ── LEFT SIDE: month nav + day headers + grid ── */}
+          <View className="cal-grid-side">
+          {/* Month nav */}
+          <View style={styles.monthNav}>
+            <Pressable onPress={prevMonth} hitSlop={10}>
+              <Ionicons name="chevron-back" size={20} color={WHITE} />
+            </Pressable>
+            <Text style={styles.monthLabel}>{monthLabel}</Text>
+            <Pressable onPress={nextMonth} hitSlop={10}>
+              <Ionicons name="chevron-forward" size={20} color={WHITE} />
+            </Pressable>
           </View>
 
-        {/* Grid */}
-        <View style={styles.calGrid}>
-          {days.map((day, i) => (
-            <View key={day !== null ? `day-${day}` : `pad-${i}`} style={styles.calDay}>
-              {day !== null ? (
+          <Animated.View style={{ transform: [{ translateX: slideAnim }] }}>
+            {/* Day-of-week headers */}
+            <View style={styles.calRow}>
+              {[{ l: 'Su' }, { l: 'M' }, { l: 'T' }, { l: 'W' }, { l: 'Th' }, { l: 'F' }, { l: 'Sa' }].map(({ l }) => (
+                <View key={l} style={styles.calDayHead}>
+                  <Text style={styles.calDayHeadText}>{l}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Grid */}
+            <View style={styles.calGrid}>
+              {days.map((day, i) => (
+                <View key={day !== null ? `day-${day}` : `pad-${i}`} style={styles.calDay}>
+                  {day !== null ? (
                     <Pressable
                       onPress={() => setSelected(dateStr(day))}
                       style={[
@@ -1319,127 +1325,137 @@ function MonthView({
                         dateStr(day) === todayStr && styles.calDayTodayBox,
                       ]}
                     >
-                  <Text
-                    style={[
-                      styles.calDayNum,
-                      selected === dateStr(day) && styles.calDayNumSelected,
-                      dateStr(day) === todayStr && styles.calDayToday,
-                    ]}
-                  >
-                    {day}
-                  </Text>
-                  {hasEvent(day) && <View style={styles.calDot} />}
-                </Pressable>
-              ) : (
-                <View style={styles.calDayEmpty} />
-              )}
+                      <Text
+                        style={[
+                          styles.calDayNum,
+                          selected === dateStr(day) && styles.calDayNumSelected,
+                          dateStr(day) === todayStr && styles.calDayToday,
+                        ]}
+                      >
+                        {day}
+                      </Text>
+                      {hasEvent(day) && <View style={styles.calDot} />}
+                    </Pressable>
+                  ) : (
+                    <View style={styles.calDayEmpty} />
+                  )}
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
+          </Animated.View>
+          </View>
 
-        {/* Reminders for selected day — dropdown, open by default */}
-        {selectedEvents && selectedEvents.length > 0 && (
-          <View style={[styles.section, { paddingHorizontal: 22 }]}>
-            <Pressable
-              onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setCalRemindersOpen(!calRemindersOpen); }}
-              style={styles.dropdownToggle}
-            >
-              <Text style={styles.sectionLabel}>reminders · {selectedEvents.length}</Text>
-              <Ionicons
-                name={calRemindersOpen ? 'chevron-up' : 'chevron-down'}
-                size={14}
-                color={DIM}
-              />
-            </Pressable>
-            {calRemindersOpen && (
-              <View>
-                {selectedEvents.map((e) => (
-                  <View key={e.id} style={styles.calEventItem}>
-                    <Ionicons
-                      name="notifications-outline"
-                      size={14}
-                      color={DIM}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.calEventTitle}>{e.title}</Text>
-                      <Text style={styles.calEventMeta} numberOfLines={1}>
-                        {e.meta}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
-              </View>
+          {/* ── RIGHT SIDE: selected day detail (reminders + notes) ── */}
+          <View className="cal-detail-side">
+            {/* Day label heading — only show when a day is selected */}
+            {selected && dayLabel && (
+              <Text style={styles.calDayHeading}>{dayLabel}</Text>
             )}
-          </View>
-        )}
 
-        {/* Empty day — only if nothing at all */}
-        {(!selectedEvents || selectedEvents.length === 0) && notesForSelectedDay.length === 0 && (
-          <View style={styles.calEmptyWrap}>
-            <Text style={styles.calEmpty}>nothing this day</Text>
-          </View>
-        )}
-
-        {/* Notes for the selected day — collapsible */}
-        {notesForSelectedDay.length > 0 && (
-          <View style={[styles.section, { paddingHorizontal: 22 }]}>
-            <Pressable
-              onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setCalNotesOpen(!calNotesOpen); }}
-              style={styles.dropdownToggle}
-            >
-              <Text style={styles.sectionLabel}>notes · {notesForSelectedDay.length}</Text>
-              <Ionicons
-                name={calNotesOpen ? 'chevron-up' : 'chevron-down'}
-                size={14}
-                color={DIM}
-              />
-            </Pressable>
-            {calNotesOpen && (
-              <View>
-                {notesForSelectedDay.map((n) => (
-                  <Swipeable
-                    key={n.id}
-                    overshootRight={false}
-                    friction={2}
-                    renderRightActions={(progress) => {
-                      const tx = progress.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [100, 0],
-                      });
-                      return (
-                        <Animated.View style={{ transform: [{ translateX: tx }], justifyContent: 'center', alignItems: 'flex-end', width: 80, paddingRight: 10 }}>
-                          <Pressable
-                            onPress={() => delNote(n)}
-                            style={styles.swipeAction}
-                          >
-                            {deleting === n.id ? (
-                              <ActivityIndicator color={WHITE} size="small" />
-                            ) : (
-                              <Ionicons name="trash-outline" size={20} color={WHITE} />
-                            )}
-                          </Pressable>
-                        </Animated.View>
-                      );
-                    }}
-                  >
-                    <View style={styles.noteItem}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.noteTitle}>{n.title}</Text>
-                        <Text style={styles.noteRaw} numberOfLines={2}>
-                          {n.raw}
-                        </Text>
+            {/* Reminders for selected day — dropdown, open by default */}
+            {selectedEvents && selectedEvents.length > 0 && (
+              <View style={[styles.section, { paddingHorizontal: 22 }]}>
+                <Pressable
+                  onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setCalRemindersOpen(!calRemindersOpen); }}
+                  style={styles.dropdownToggle}
+                >
+                  <Text style={styles.sectionLabel}>reminders · {selectedEvents.length}</Text>
+                  <Ionicons
+                    name={calRemindersOpen ? 'chevron-up' : 'chevron-down'}
+                    size={14}
+                    color={DIM}
+                  />
+                </Pressable>
+                {calRemindersOpen && (
+                  <View>
+                    {selectedEvents.map((e) => (
+                      <View key={e.id} style={styles.calEventItem}>
+                        <Ionicons
+                          name="notifications-outline"
+                          size={14}
+                          color={DIM}
+                        />
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.calEventTitle}>{e.title}</Text>
+                          <Text style={styles.calEventMeta} numberOfLines={1}>
+                            {e.meta}
+                          </Text>
+                        </View>
                       </View>
-                      <Text style={styles.noteDate}>
-                        {new Date(n.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                      </Text>
-                    </View>
-                  </Swipeable>
-                ))}
+                    ))}
+                  </View>
+                )}
+              </View>
+            )}
+
+            {/* Empty day — only if nothing at all */}
+            {(!selectedEvents || selectedEvents.length === 0) && notesForSelectedDay.length === 0 && (
+              <View style={styles.calEmptyWrap}>
+                <Text style={styles.calEmpty}>{selected ? 'nothing this day' : 'pick a day'}</Text>
+              </View>
+            )}
+
+            {/* Notes for the selected day — collapsible */}
+            {notesForSelectedDay.length > 0 && (
+              <View style={[styles.section, { paddingHorizontal: 22 }]}>
+                <Pressable
+                  onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setCalNotesOpen(!calNotesOpen); }}
+                  style={styles.dropdownToggle}
+                >
+                  <Text style={styles.sectionLabel}>notes · {notesForSelectedDay.length}</Text>
+                  <Ionicons
+                    name={calNotesOpen ? 'chevron-up' : 'chevron-down'}
+                    size={14}
+                    color={DIM}
+                  />
+                </Pressable>
+                {calNotesOpen && (
+                  <View>
+                    {notesForSelectedDay.map((n) => (
+                      <Swipeable
+                        key={n.id}
+                        overshootRight={false}
+                        friction={2}
+                        renderRightActions={(progress) => {
+                          const tx = progress.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [100, 0],
+                          });
+                          return (
+                            <Animated.View style={{ transform: [{ translateX: tx }], justifyContent: 'center', alignItems: 'flex-end', width: 80, paddingRight: 10 }}>
+                              <Pressable
+                                onPress={() => delNote(n)}
+                                style={styles.swipeAction}
+                              >
+                                {deleting === n.id ? (
+                                  <ActivityIndicator color={WHITE} size="small" />
+                                ) : (
+                                  <Ionicons name="trash-outline" size={20} color={WHITE} />
+                                )}
+                              </Pressable>
+                            </Animated.View>
+                          );
+                        }}
+                      >
+                        <View style={styles.noteItem}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.noteTitle}>{n.title}</Text>
+                            <Text style={styles.noteRaw} numberOfLines={2}>
+                              {n.raw}
+                            </Text>
+                          </View>
+                          <Text style={styles.noteDate}>
+                            {new Date(n.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          </Text>
+                        </View>
+                      </Swipeable>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
           </View>
-        )}
-        </Animated.View>
+        </View>
         </View>
       </ScrollView>
     </View>
@@ -1672,6 +1688,18 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 480,
     alignSelf: 'center',
+  },
+
+  // Heading for the selected day on the right side of the split view.
+  calDayHeading: {
+    color: WHITE,
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: 0.5,
+    paddingHorizontal: 22,
+    paddingTop: 8,
+    paddingBottom: 14,
+    textTransform: 'uppercase',
   },
 
   // Close button — small X in the top-right corner of the web app.
@@ -1975,10 +2003,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   calDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: WHITE,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#FFFFFF',
     marginTop: 3,
   },
   calEmptyWrap: {
