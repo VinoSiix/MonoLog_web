@@ -1729,7 +1729,7 @@ const styles = StyleSheet.create({
   // itself doesn't scroll (it's a month view), but capping the block height
   // pushes the dropdowns into view without an overwhelming wall of cells.
   calBlockWeb: {
-    maxHeight: 630,
+    maxHeight: 945,
     overflow: 'hidden',
   },
 
