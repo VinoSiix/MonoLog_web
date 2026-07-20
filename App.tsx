@@ -108,112 +108,24 @@ function openWaitlist(): void {
   }
 }
 
-// ─── Paywall styles (modal JSX is rendered inline at App root,
-// same pattern as the welcome overlay — keeps positioning context clean.
-const paywallStyles = StyleSheet.create({
-  overlay: {
-    position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: BLACK,
-    zIndex: 50,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 28,
-  },
-  backdrop: {
-    position: "absolute",
-    top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: BLACK,
-  },
-  card: {
-    width: "100%",
-    maxWidth: 420,
-    backgroundColor: BLACK,
-    borderWidth: 1,
-    borderColor: "#1f1f1f",
-    borderRadius: 14,
-    padding: 28,
-  },
-  eyebrow: {
-    fontFamily: MONO,
-    fontSize: 11,
-    letterSpacing: 2.5,
-    color: DIM,
-    marginBottom: 14,
-  },
-  title: {
-    fontFamily: MONO,
-    fontSize: 22,
-    fontWeight: "600",
-    color: WHITE,
-    letterSpacing: -0.4,
-    lineHeight: 1.15,
-    marginBottom: 14,
-  },
-  body: {
-    fontFamily: MONO,
-    fontSize: 13,
-    lineHeight: 1.55,
-    color: "#bbb",
-    marginBottom: 28,
-  },
-  ctaRow: {
-    flexDirection: "row",
-    alignItems: "stretch",
-  },
-  btnPrimary: {
-    flex: 1,
-    backgroundColor: WHITE,
-    borderRadius: 100,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 10,
-  },
-  btnGhost: {
-    flex: 1,
-    backgroundColor: "transparent",
-    borderWidth: 1,
-    borderColor: "#2a2a2a",
-    borderRadius: 100,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  btnPressed: { opacity: 0.7 },
-  btnPrimaryText: {
-    fontFamily: MONO,
-    fontSize: 12,
-    letterSpacing: 1.5,
-    color: BLACK,
-    fontWeight: "600",
-  },
-  btnGhostText: {
-    fontFamily: MONO,
-    fontSize: 12,
-    letterSpacing: 1.5,
-    color: "#bbb",
-  },
-});
-
 // ─── Write Pad ──────────────────────────────────────────────────
 
 function WritePad({
   onReminderCreated,
   onNoteCreated,
-  onHitPaywall,
 }: {
   onReminderCreated: () => void;
   onNoteCreated: () => void;
-  onHitPaywall: () => void;
 }) {
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [saving, setSaving] = useState(false);
+  // How many free sorts the user has left today. Loaded on mount and
+  // refreshed after each successful /analyze. Shown as "x/5" next to
+  // the send button so users always know where they stand.
+  const [remaining, setRemaining] = useState(FREE_TIER_DAILY_LIMIT);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const processingRef = useRef(false);
   const buttonOpacity = useRef(new Animated.Value(1)).current;
@@ -376,6 +288,12 @@ function WritePad({
     AsyncStorage.setItem('monolog.draft', draft);
   }, [draft]);
 
+  // Load remaining free-sort count on mount so the counter is accurate
+  // the moment the user lands on the write screen.
+  useEffect(() => {
+    getRemainingToday().then(setRemaining).catch(() => {});
+  }, []);
+
   // Restore draft.
   useEffect(() => {
     (async () => {
@@ -511,9 +429,11 @@ function WritePad({
     // IP (catches users who clear storage) — see RateLimitError catch below.
     const canSort = await canSortMore();
     if (!canSort) {
-      const remaining = await getRemainingToday();
-      void remaining;
-      onHitPaywall();
+      Alert.alert(
+        "That's all 5 for today",
+        `You've used all ${FREE_TIER_DAILY_LIMIT} free sorts. They reset at midnight.`,
+        [{ text: 'OK' }],
+      );
       return;
     }
 
@@ -556,6 +476,8 @@ function WritePad({
       // Do this only on success so failed requests don't burn the user's
       // daily slots.
       await recordSort();
+      // Refresh the header counter so it ticks down the moment a sort lands.
+      getRemainingToday().then(setRemaining).catch(() => {});
     } catch (err) {
       // ── Rate limited (429 from worker) — don't fall back to a note. ──
       // Sync local counter with the server's view and show a friendly
@@ -563,13 +485,19 @@ function WritePad({
       // tomorrow or upgrade + retry immediately.
       if (err instanceof RateLimitError) {
         await syncFromServer(err.used);
-        // Reverse the save animation so the draft comes back.
+        // Refresh the counter (will read 0 after sync) and reverse the
+        // save animation so the draft comes back.
+        getRemainingToday().then(setRemaining).catch(() => {});
         setSaving(false);
         Animated.parallel([
           Animated.timing(draftFade, { toValue: 1, duration: 220, useNativeDriver: false }),
           Animated.timing(savingFade, { toValue: 0, duration: 220, useNativeDriver: false }),
         ]).start();
-        onHitPaywall();
+        Alert.alert(
+          "That's all 5 for today",
+          `You've used all ${FREE_TIER_DAILY_LIMIT} free sorts. They reset at midnight.`,
+          [{ text: 'OK' }],
+        );
         return;
       }
       // ── AI temporarily unavailable (shared Groq free-tier RPM hit) ──
@@ -848,22 +776,30 @@ function WritePad({
         {/* Header */}
       <View style={[styles.header, { paddingTop: 54 }]}>
           <Text style={styles.headerTitle}>write</Text>
-          <Pressable
-            onPress={send}
-            disabled={loading || saving || draft.trim().length === 0}
-            hitSlop={14}
-            style={({ pressed }) => [
-              styles.sendBtn,
-              pressed && styles.sendBtnPressed,
-              (loading || saving || draft.trim().length === 0) && styles.sendBtnDisabled,
-            ]}
-          >
-            {loading ? (
-              <ActivityIndicator color={BLACK} size="small" />
-            ) : (
-              <Ionicons name="arrow-up" size={24} color={BLACK} />
-            )}
-          </Pressable>
+          <View style={styles.headerRight}>
+            {/* Free-tier counter: shows remaining/5. Dims to almost-invisible
+                when at 0 so the user still has a visual hint without feeling
+                punished. */}
+            <Text style={[styles.counter, remaining === 0 && styles.counterEmpty]}>
+              {remaining}/{FREE_TIER_DAILY_LIMIT}
+            </Text>
+            <Pressable
+              onPress={send}
+              disabled={loading || saving || draft.trim().length === 0}
+              hitSlop={14}
+              style={({ pressed }) => [
+                styles.sendBtn,
+                pressed && styles.sendBtnPressed,
+                (loading || saving || draft.trim().length === 0) && styles.sendBtnDisabled,
+              ]}
+            >
+              {loading ? (
+                <ActivityIndicator color={BLACK} size="small" />
+              ) : (
+                <Ionicons name="arrow-up" size={24} color={BLACK} />
+              )}
+            </Pressable>
+          </View>
         </View>
 
         <KeyboardAvoidingView
@@ -1729,32 +1665,6 @@ export default function App() {
   const [welcomeVisible, setWelcomeVisible] = useState(false);
   const welcomeFade = useRef(new Animated.Value(1)).current;
 
-  // Paywall state lives at root so the modal renders above everything
-  // (same pattern as the welcome overlay). Buried inside WritePad it was
-  // inheriting weird positioning context from KeyboardAvoidingView.
-  const [paywallVisible, setPaywallVisible] = useState(false);
-  const paywallFade = useRef(new Animated.Value(0)).current;
-
-  // Triggered by WritePad when rate-limit is hit. Fades the modal in.
-  const showPaywall = useCallback(() => {
-    setPaywallVisible(true);
-    paywallFade.setValue(0);
-    Animated.timing(paywallFade, {
-      toValue: 1,
-      duration: 250,
-      easing: Easing.out(Easing.ease),
-      useNativeDriver: true,
-    }).start();
-  }, [paywallFade]);
-
-  const hidePaywall = useCallback(() => {
-    Animated.timing(paywallFade, {
-      toValue: 0,
-      duration: 200,
-      useNativeDriver: true,
-    }).start(() => setPaywallVisible(false));
-  }, [paywallFade]);
-
   useEffect(() => {
     AsyncStorage.getItem(WELCOME_KEY)
       .then((v) => {
@@ -1793,44 +1703,8 @@ export default function App() {
   return (
     <View style={styles.outerShell}>
       <View style={styles.appShell} className={shellClassName}>
-        <AppInner tab={tab} setTab={setTab} onHitPaywall={showPaywall} />
+        <AppInner tab={tab} setTab={setTab} />
       </View>
-
-      {/* Paywall modal — rendered at root so positioning context is clean.
-          Same pattern as the welcome overlay below. */}
-      {paywallVisible && (
-        <Animated.View
-          style={[paywallStyles.overlay, { opacity: paywallFade }]}
-          pointerEvents="auto"
-        >
-          <Pressable style={paywallStyles.backdrop} onPress={hidePaywall} />
-          <View style={paywallStyles.card}>
-            <Text style={paywallStyles.eyebrow}>
-              FREE TIER · {FREE_TIER_DAILY_LIMIT}/DAY
-            </Text>
-            <Text style={paywallStyles.title}>
-              That's all {FREE_TIER_DAILY_LIMIT} for today.
-            </Text>
-            <Text style={paywallStyles.body}>
-              You've used all {FREE_TIER_DAILY_LIMIT} free sorts. They reset at midnight. Need more? Paid plans (unlimited sorts, scheduled reminders, sync) are coming soon.
-            </Text>
-            <View style={paywallStyles.ctaRow}>
-              <Pressable
-                style={({ pressed }) => [paywallStyles.btnPrimary, pressed && paywallStyles.btnPressed]}
-                onPress={() => { hidePaywall(); openWaitlist(); }}
-              >
-                <Text style={paywallStyles.btnPrimaryText}>Join waitlist</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [paywallStyles.btnGhost, pressed && paywallStyles.btnPressed]}
-                onPress={hidePaywall}
-              >
-                <Text style={paywallStyles.btnGhostText}>Not now</Text>
-              </Pressable>
-            </View>
-          </View>
-        </Animated.View>
-      )}
 
       {welcomeVisible && (
         <Animated.View
@@ -1861,7 +1735,7 @@ export default function App() {
   );
 }
 
-function AppInner({ tab, setTab, onHitPaywall }: { tab: 'write' | 'reminders' | 'calendar'; setTab: (t: 'write' | 'reminders' | 'calendar') => void; onHitPaywall: () => void }) {
+function AppInner({ tab, setTab }: { tab: 'write' | 'reminders' | 'calendar'; setTab: (t: 'write' | 'reminders' | 'calendar') => void }) {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -1963,7 +1837,7 @@ function AppInner({ tab, setTab, onHitPaywall }: { tab: 'write' | 'reminders' | 
         ]}
       >
         {tab === 'write' ? (
-          <WritePad onReminderCreated={loadReminders} onNoteCreated={loadNotes} onHitPaywall={onHitPaywall} />
+          <WritePad onReminderCreated={loadReminders} onNoteCreated={loadNotes} />
         ) : tab === 'reminders' ? (
           <RemindersPad
             reminders={reminders}
@@ -2175,6 +2049,25 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
     fontWeight: '400',
+  },
+  // Right side of header: counter + send button side-by-side.
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  // "x/5" counter. Monospace to match the rest of the UI, dim so it
+  // doesn't compete with the send button for attention.
+  counter: {
+    fontFamily: MONO,
+    fontSize: 12,
+    letterSpacing: 1,
+    color: DIM,
+    fontVariant: ['tabular-nums'],
+  },
+  // When at 0, fade further so it reads as "spent" without being alarm-red.
+  counterEmpty: {
+    opacity: 0.5,
   },
   sendBtn: {
     width: 40,
