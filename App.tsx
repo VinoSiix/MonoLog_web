@@ -1137,6 +1137,45 @@ function MonthView({
   const [calNotesOpen, setCalNotesOpen] = useState(false);
   const [deleting, setDeleting] = useState<string | null>(null);
   const slideAnim = useRef(new Animated.Value(0)).current;
+  // Rotation values for the chevron icons. 0 = pointing down (closed),
+  // 1 = pointing up (open). Reminders starts open (1), notes starts closed (0).
+  const remindersChevronRot = useRef(new Animated.Value(1)).current;
+  const notesChevronRot = useRef(new Animated.Value(0)).current;
+
+  // Toggle handlers — animate both the chevron rotation AND let LayoutAnimation
+  // handle the height transition for the content below.
+  const toggleReminders = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    const next = !calRemindersOpen;
+    setCalRemindersOpen(next);
+    Animated.timing(remindersChevronRot, {
+      toValue: next ? 1 : 0,
+      duration: 220,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  };
+  const toggleNotes = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    const next = !calNotesOpen;
+    setCalNotesOpen(next);
+    Animated.timing(notesChevronRot, {
+      toValue: next ? 1 : 0,
+      duration: 220,
+      easing: Easing.inOut(Easing.ease),
+      useNativeDriver: true,
+    }).start();
+  };
+
+  // Interpolated rotation values: 0deg = down, 180deg = up.
+  const remindersRotateDeg = remindersChevronRot.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg'],
+  });
+  const notesRotateDeg = notesChevronRot.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '180deg'],
+  });
 
   const delNote = (n: Note) => {
     setDeleting(n.id);
@@ -1356,15 +1395,17 @@ function MonthView({
             {selectedEvents && selectedEvents.length > 0 && (
               <View style={[styles.section, { paddingHorizontal: 22 }]}>
                 <Pressable
-                  onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setCalRemindersOpen(!calRemindersOpen); }}
+                  onPress={toggleReminders}
                   style={styles.dropdownToggle}
                 >
                   <Text style={styles.sectionLabel}>reminders · {selectedEvents.length}</Text>
-                  <Ionicons
-                    name={calRemindersOpen ? 'chevron-up' : 'chevron-down'}
-                    size={14}
-                    color={DIM}
-                  />
+                  <Animated.View style={{ transform: [{ rotate: remindersRotateDeg }] }}>
+                    <Ionicons
+                      name="chevron-down"
+                      size={14}
+                      color={DIM}
+                    />
+                  </Animated.View>
                 </Pressable>
                 {calRemindersOpen && (
                   <View>
@@ -1399,15 +1440,17 @@ function MonthView({
             {notesForSelectedDay.length > 0 && (
               <View style={[styles.section, { paddingHorizontal: 22 }]}>
                 <Pressable
-                  onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setCalNotesOpen(!calNotesOpen); }}
+                  onPress={toggleNotes}
                   style={styles.dropdownToggle}
                 >
                   <Text style={styles.sectionLabel}>notes · {notesForSelectedDay.length}</Text>
-                  <Ionicons
-                    name={calNotesOpen ? 'chevron-up' : 'chevron-down'}
-                    size={14}
-                    color={DIM}
-                  />
+                  <Animated.View style={{ transform: [{ rotate: notesRotateDeg }] }}>
+                    <Ionicons
+                      name="chevron-down"
+                      size={14}
+                      color={DIM}
+                    />
+                  </Animated.View>
                 </Pressable>
                 {calNotesOpen && (
                   <View>
@@ -1571,19 +1614,6 @@ function AppInner() {
       <View style={styles.container}>
       <StatusBar style="light" />
 
-      {/* Close button — top-right corner, web only.
-          Returns to the landing page. Hidden on native (no concept of "back to website"). */}
-      {IS_WEB && (
-        <Pressable
-          onPress={() => { try { window.location.href = '/'; } catch {} }}
-          style={styles.closeBtn}
-          hitSlop={12}
-          accessibilityLabel="Back to website"
-        >
-          <Ionicons name="close" size={16} color={DIM} />
-        </Pressable>
-      )}
-
       <Animated.View
         style={[
           { flex: 1, opacity: fadeAnim, transform: [{ translateY: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] },
@@ -1700,21 +1730,6 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     paddingBottom: 14,
     textTransform: 'uppercase',
-  },
-
-  // Close button — small X in the top-right corner of the web app.
-  // Returns user to the landing page. Web only.
-  closeBtn: {
-    position: 'absolute',
-    top: 14,
-    right: 14,
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-    backgroundColor: 'rgba(255,255,255,0.06)',
   },
 
   // Header
