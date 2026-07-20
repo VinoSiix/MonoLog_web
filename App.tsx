@@ -1551,30 +1551,17 @@ function AppInner() {
       <View style={styles.container}>
       <StatusBar style="light" />
 
-      {/* Top bar — back to website (web only) + App Store button (web only).
-          Native (iOS/Android) has no "back to website" concept and showing
-          "Download on App Store" inside the iOS app is redundant. */}
+      {/* Close button — top-right corner, web only.
+          Returns to the landing page. Hidden on native (no concept of "back to website"). */}
       {IS_WEB && (
-        <View style={styles.topBar}>
-          <Pressable
-            onPress={() => { try { window.location.href = '/'; } catch {} }}
-            style={styles.topBarBtn}
-            hitSlop={10}
-          >
-            <Ionicons name="chevron-back" size={15} color={DIM} />
-            <Text style={styles.topBarText}>website</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              // Replace with real App Store URL once listed.
-              try { window.open('https://mono-log-web.vercel.app/', '_blank'); } catch {}
-            }}
-            style={styles.appStoreBtn}
-          >
-            <Ionicons name="logo-apple" size={13} color={BLACK} />
-            <Text style={styles.appStoreText}>App Store</Text>
-          </Pressable>
-        </View>
+        <Pressable
+          onPress={() => { try { window.location.href = '/'; } catch {} }}
+          style={styles.closeBtn}
+          hitSlop={12}
+          accessibilityLabel="Back to website"
+        >
+          <Ionicons name="close" size={16} color={DIM} />
+        </Pressable>
       )}
 
       <Animated.View
@@ -1674,42 +1661,19 @@ const styles = StyleSheet.create({
   },
   container: { flex: 1, backgroundColor: BLACK },
 
-  // Top bar (web only) — thin row above the tab content.
-  topBar: {
-    flexDirection: 'row',
+  // Close button — small X in the top-right corner of the web app.
+  // Returns user to the landing page. Web only.
+  closeBtn: {
+    position: 'absolute',
+    top: 14,
+    right: 14,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 6,
-    borderBottomWidth: 0,
-  },
-  topBarBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-  },
-  topBarText: {
-    color: DIM,
-    fontSize: 12,
-    letterSpacing: 0.4,
-  },
-  appStoreBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    backgroundColor: WHITE,
-    paddingHorizontal: 11,
-    paddingVertical: 6,
-    borderRadius: 14,
-  },
-  appStoreText: {
-    color: BLACK,
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.3,
+    justifyContent: 'center',
+    zIndex: 10,
+    backgroundColor: 'rgba(255,255,255,0.06)',
   },
 
   // Header

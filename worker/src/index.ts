@@ -6,6 +6,7 @@
 
 interface Env {
   GROQ_API_KEY: string;
+  WAITLIST: KVNamespace;
 }
 
 interface AnalyzeResponse {
@@ -93,8 +94,62 @@ async function handleRequest(
       });
     }
 
-    // ── Route: /transcribe ──────────────────────────────────────
+    // ── Route: /waitlist ─────────────────────────────────────────
+    // Accepts { email } → stores in KV keyed by normalized email.
+    // Idempotent: re-submitting the same email returns ok without duplicating.
     const url = new URL(request.url);
+    if (url.pathname === '/waitlist') {
+      if (request.method !== 'POST') {
+        return new Response(JSON.stringify({ error: 'POST only' }), {
+          status: 405,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+
+      let email: string | undefined;
+      try {
+        const body = await request.json() as { email?: string };
+        email = body.email;
+      } catch {
+        return new Response(JSON.stringify({ error: 'invalid JSON' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+
+      // Basic validation — not RFC-perfect, just catches obvious junk.
+      const normalized = (email ?? '').toLowerCase().trim();
+      if (!normalized || !normalized.includes('@') || normalized.length > 320) {
+        return new Response(JSON.stringify({ error: 'valid email required' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+
+      // Check if already on the list.
+      const existing = await env.WAITLIST.get(`email:${normalized}`);
+      if (existing) {
+        return new Response(JSON.stringify({ ok: true, already: true }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+
+      await env.WAITLIST.put(
+        `email:${normalized}`,
+        JSON.stringify({
+          email: normalized,
+          at: new Date().toISOString(),
+          ua: request.headers.get('user-agent') ?? '',
+          ref: request.headers.get('referer') ?? '',
+        }),
+      );
+
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
+
+    // ── Route: /transcribe ──────────────────────────────────────
     if (url.pathname === '/transcribe') {
       const formData = await request.formData();
       const file = formData.get('file');

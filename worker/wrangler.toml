@@ -4,3 +4,7 @@ compatibility_date = "2026-06-01"
 
 [vars]
 GROQ_API_KEY = "REDACTED_GROQ_KEY_ROTATE_NOW"
+
+[[kv_namespaces]]
+binding = "WAITLIST"
+id = "4dd6467700cd41c7b284ab9dc72bbbb6"

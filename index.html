@@ -342,6 +342,56 @@ strong{color:#fff;font-weight:600}
 }
 
 /* ============================================================
+   WAITLIST
+   ============================================================ */
+.waitlist{
+  border:1px solid var(--hairline);border-radius:var(--r);background:var(--card);
+  padding:clamp(28px,4vw,46px) clamp(22px,3.4vw,40px);
+  text-align:center;position:relative;overflow:hidden;
+}
+.waitlist::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--white);opacity:.85}
+.waitlist h3{
+  font-family:var(--mono);font-weight:600;
+  font-size:clamp(1.5rem,4vw,2.3rem);line-height:1.1;letter-spacing:-.02em;
+  margin:0 0 14px;
+}
+.waitlist h3 .dim{color:var(--gray)}
+.waitlist .wl-sub{
+  font-family:var(--mono);font-size:clamp(.86rem,1.6vw,1rem);color:var(--gray-bright);
+  max-width:46ch;margin:0 auto 28px;line-height:1.55;
+}
+.wl-form{
+  display:flex;gap:8px;max-width:440px;margin:0 auto;
+  flex-wrap:wrap;justify-content:center;
+}
+.wl-input{
+  flex:1;min-width:220px;
+  background:var(--black);border:1px solid var(--hairline-hi);
+  color:var(--white);font-family:var(--mono);font-size:.9rem;
+  padding:14px 18px;border-radius:100px;
+  transition:border-color .25s var(--ease);
+}
+.wl-input::placeholder{color:var(--gray)}
+.wl-input:focus{outline:none;border-color:var(--gray-bright)}
+.wl-btn{
+  font-family:var(--mono);font-size:.76rem;letter-spacing:.12em;text-transform:uppercase;
+  display:inline-flex;align-items:center;gap:.6em;
+  padding:14px 24px;border-radius:100px;border:1px solid transparent;cursor:pointer;
+  background:var(--white);color:var(--black);
+  transition:transform .25s var(--ease),opacity .25s var(--ease);
+}
+.wl-btn:hover{transform:translateY(-2px);opacity:.9}
+.wl-btn:active{transform:translateY(0)}
+.wl-btn:disabled{opacity:.5;cursor:default;transform:none}
+.wl-status{
+  font-family:var(--mono);font-size:.84rem;color:var(--gray-bright);
+  margin-top:18px;min-height:1.2em;letter-spacing:.04em;
+  transition:opacity .3s var(--ease);
+}
+.wl-status.ok{color:var(--white)}
+.wl-status.err{color:#ff6b6b}
+
+/* ============================================================
    PRICING
    ============================================================ */
 .price-card{
@@ -509,6 +559,10 @@ strong{color:#fff;font-weight:600}
   .price-period{font-size:.7rem;margin-top:10px}
   .benefit{font-size:.82rem;margin-bottom:24px}
   .price-foot{font-size:.62rem;padding-top:16px;margin-top:24px}
+
+  /* ---- WAITLIST: stack input + button ---- */
+  .wl-form{flex-direction:column;max-width:none}
+  .wl-input,.wl-btn{width:100%;min-width:0;justify-content:center}
 
   /* ---- CTA: stacked full-width ---- */
   .cta{padding:clamp(28px,5vw,44px) 0}
@@ -870,6 +924,28 @@ strong{color:#fff;font-weight:600}
   </blockquote>
 </section>
 
+<!-- ===================== WAITLIST ===================== -->
+<section class="section wrap" id="waitlist">
+  <p class="eyebrow" data-reveal>iOS is coming</p>
+  <div class="waitlist" data-reveal>
+    <h3>Get Monolog on iPhone. <span class="dim">First.</span></h3>
+    <p class="wl-sub">Web works today. The iOS app is being built right now. Drop your email — I'll ping you the day it ships. No spam, no newsletters, just the one message.</p>
+    <form class="wl-form" id="wl-form" autocomplete="on" novalidate>
+      <input
+        class="wl-input"
+        type="email"
+        name="email"
+        inputmode="email"
+        placeholder="you@email.com"
+        aria-label="Your email"
+        required
+      />
+      <button class="wl-btn" type="submit" id="wl-btn">Join waitlist</button>
+    </form>
+    <p class="wl-status" id="wl-status" aria-live="polite"></p>
+  </div>
+</section>
+
 <!-- ===================== PRICING ===================== -->
 <section class="section wrap" id="pricing">
   <p class="eyebrow" data-reveal>Pricing</p>
@@ -970,7 +1046,50 @@ strong{color:#fff;font-weight:600}
       el.scrollIntoView({behavior:'smooth', block:'start'});
       if(history.pushState) history.pushState(null,'',id);
     });
-  });
+  /* ---- waitlist form ---- */
+  var wlForm = document.getElementById('wl-form');
+  var wlBtn = document.getElementById('wl-btn');
+  var wlStatus = document.getElementById('wl-status');
+  var WL_ENDPOINT = 'https://minnotes-worker.timppamsix.workers.dev/waitlist';
+  if(wlForm){
+    wlForm.addEventListener('submit', function(ev){
+      ev.preventDefault();
+      var email = wlForm.email.value.trim();
+      if(!email || email.indexOf('@') === -1){
+        wlStatus.textContent = 'enter a valid email';
+        wlStatus.className = 'wl-status err';
+        return;
+      }
+      wlBtn.disabled = true;
+      wlBtn.textContent = 'Adding…';
+      wlStatus.textContent = '';
+      wlStatus.className = 'wl-status';
+      fetch(WL_ENDPOINT, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({email: email})
+      })
+        .then(function(r){ return r.json().then(function(d){ return {ok: r.ok, data: d}; }); })
+        .then(function(out){
+          if(out.ok && out.data && out.data.ok){
+            wlStatus.textContent = out.data.already
+              ? "you're already on the list — talk soon"
+              : "you're on the list — talk soon";
+            wlStatus.className = 'wl-status ok';
+            wlBtn.textContent = 'See you soon';
+            wlForm.email.value = '';
+          } else {
+            throw new Error((out.data && out.data.error) || 'server error');
+          }
+        })
+        .catch(function(err){
+          wlStatus.textContent = 'could not submit — try again? (' + err.message + ')';
+          wlStatus.className = 'wl-status err';
+          wlBtn.disabled = false;
+          wlBtn.textContent = 'Join waitlist';
+        });
+    });
+  }
 })();
 </script>
 </body>
