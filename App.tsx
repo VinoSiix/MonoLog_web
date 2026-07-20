@@ -9,6 +9,7 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   LayoutAnimation,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -111,12 +112,12 @@ function openWaitlist(): void {
 // ─── Paywall Modal ──────────────────────────────────────────────
 // Shown when the user hits their 5/day free-tier limit. Styled to match
 // the landing page aesthetic: pure black card, monospace, white pill
-// primary button, ghost secondary. Mirrors index.html's .btn-primary /
-// .btn-ghost / .wl-btn visual language.
+// primary button, ghost secondary.
 //
-// Uses a mount-driven Animated.Value so it fades in over 200ms when
-// `visible` flips true. The backdrop is solid black (not translucent) so
-// app text behind it can't bleed through and look "layered".
+// Uses RN's <Modal> component which portals above everything (no parent
+// positioning context issues). Each text is wrapped in its own <View>
+// to force block layout — react-native-web renders bare <Text> as <span>
+// which can go inline and pile up if not explicitly wrapped.
 function PaywallModal({
   visible,
   limit,
@@ -128,66 +129,61 @@ function PaywallModal({
   onClose: () => void;
   onJoinWaitlist: () => void;
 }) {
-  // Fade-in animation. We reset to 0 whenever we mount (i.e. when visible
-  // flips true), then animate to 1. Using Animated.timing with a short
-  // duration keeps the modal from popping in abruptly.
-  const fade = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (visible) {
-      fade.setValue(0);
-      Animated.timing(fade, {
-        toValue: 1,
-        duration: 200,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start();
-    }
-  }, [visible, fade]);
-
-  // Render nothing when invisible — avoids maintaining an off-screen layer.
-  if (!visible) return null;
-
   return (
-    <Animated.View
-      style={[paywallStyles.overlay, { opacity: fade }]}
-      pointerEvents="auto"
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
     >
-      {/* Solid black backdrop — opaque so no app text bleeds through.
-          Pressable so tapping outside the card closes the modal. */}
-      <Pressable style={paywallStyles.backdrop} onPress={onClose} />
-      <View style={paywallStyles.card}>
-        <Text style={paywallStyles.eyebrow}>FREE TIER · {limit}/DAY</Text>
-        <Text style={paywallStyles.title}>That's all {limit} for today.</Text>
-        <Text style={paywallStyles.body}>
-          You've used all {limit} free sorts. They reset at midnight.
-          Need more? Paid plans (unlimited sorts, scheduled reminders, sync)
-          are coming soon.
-        </Text>
-        <View style={paywallStyles.ctaRow}>
-          <Pressable style={paywallStyles.btnPrimary} onPress={onJoinWaitlist}>
-            <Text style={paywallStyles.btnPrimaryText}>Join waitlist</Text>
-          </Pressable>
-          <Pressable style={paywallStyles.btnGhost} onPress={onClose}>
-            <Text style={paywallStyles.btnGhostText}>Not now</Text>
-          </Pressable>
+      <View style={paywallStyles.overlay}>
+        {/* Backdrop tap closes the modal. Solid black so app text behind
+            it can't bleed through. */}
+        <Pressable style={paywallStyles.backdrop} onPress={onClose} />
+        {/* Card. maxWidth caps width on desktop; on mobile it fills. */}
+        <View style={paywallStyles.card}>
+          <View style={paywallStyles.eyebrowWrap}>
+            <Text style={paywallStyles.eyebrow}>FREE TIER · {limit}/DAY</Text>
+          </View>
+          <View style={paywallStyles.titleWrap}>
+            <Text style={paywallStyles.title}>That's all {limit} for today.</Text>
+          </View>
+          <View style={paywallStyles.bodyWrap}>
+            <Text style={paywallStyles.body}>
+              You've used all {limit} free sorts. They reset at midnight.
+              Need more? Paid plans (unlimited sorts, scheduled reminders,
+              sync) are coming soon.
+            </Text>
+          </View>
+          <View style={paywallStyles.ctaRow}>
+            <Pressable
+              style={({ pressed }) => [paywallStyles.btnPrimary, pressed && paywallStyles.btnPressed]}
+              onPress={onJoinWaitlist}
+            >
+              <Text style={paywallStyles.btnPrimaryText}>Join waitlist</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [paywallStyles.btnGhost, pressed && paywallStyles.btnPressed]}
+              onPress={onClose}
+            >
+              <Text style={paywallStyles.btnGhostText}>Not now</Text>
+            </Pressable>
+          </View>
         </View>
       </View>
-    </Animated.View>
+    </Modal>
   );
 }
 
 const paywallStyles = StyleSheet.create({
   overlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    zIndex: 1000,
+    flex: 1,
+    backgroundColor: BLACK,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 28,
   },
-  // Solid black backdrop (fully opaque). The previous 0.78 opacity let the
-  // app's white text bleed through, making the modal look "layered" with
-  // the app underneath. Solid black = clean separation.
   backdrop: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
@@ -201,15 +197,18 @@ const paywallStyles = StyleSheet.create({
     borderColor: '#1f1f1f',
     borderRadius: 14,
     padding: 28,
-    // Explicit elevation for Android so the card floats above the backdrop.
-    elevation: 8,
   },
+  // Each text wrapped in its own View with explicit bottom margin to
+  // guarantee block stacking regardless of how react-native-web chooses
+  // to render bare <Text>.
+  eyebrowWrap: { marginBottom: 14 },
+  titleWrap: { marginBottom: 14 },
+  bodyWrap: { marginBottom: 28 },
   eyebrow: {
     fontFamily: MONO,
     fontSize: 11,
     letterSpacing: 2.5,
     color: DIM,
-    marginBottom: 14,
   },
   title: {
     fontFamily: MONO,
@@ -218,40 +217,29 @@ const paywallStyles = StyleSheet.create({
     color: WHITE,
     letterSpacing: -0.4,
     lineHeight: 1.15,
-    marginBottom: 14,
   },
   body: {
     fontFamily: MONO,
     fontSize: 13,
     lineHeight: 1.55,
     color: '#bbb',
-    marginBottom: 24,
   },
   ctaRow: {
     flexDirection: 'row',
-    gap: 10,
-    flexWrap: 'wrap',
+    alignItems: 'stretch',
   },
   btnPrimary: {
     flex: 1,
-    minWidth: 140,
     backgroundColor: WHITE,
     borderRadius: 100,
     paddingVertical: 14,
     paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  btnPrimaryText: {
-    fontFamily: MONO,
-    fontSize: 12,
-    letterSpacing: 1.5,
-    color: BLACK,
-    fontWeight: '600',
+    marginRight: 10,
   },
   btnGhost: {
     flex: 1,
-    minWidth: 100,
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: '#2a2a2a',
@@ -260,6 +248,14 @@ const paywallStyles = StyleSheet.create({
     paddingHorizontal: 20,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  btnPressed: { opacity: 0.7 },
+  btnPrimaryText: {
+    fontFamily: MONO,
+    fontSize: 12,
+    letterSpacing: 1.5,
+    color: BLACK,
+    fontWeight: '600',
   },
   btnGhostText: {
     fontFamily: MONO,
