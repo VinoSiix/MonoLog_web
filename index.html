@@ -343,50 +343,42 @@ strong{color:#fff;font-weight:600}
 
 /* ============================================================
    WAITLIST
+   Shares primitives with the rest of the page:
+   eyebrow + h2.title + lead + a single .card-style form.
    ============================================================ */
-.waitlist{
+.wl-card{
   border:1px solid var(--hairline);border-radius:var(--r);background:var(--card);
-  padding:clamp(28px,4vw,46px) clamp(22px,3.4vw,40px);
-  text-align:center;position:relative;overflow:hidden;
+  padding:clamp(24px,3.4vw,38px);
+  display:flex;flex-direction:column;gap:18px;
+  transition:transform .3s var(--ease),border-color .3s var(--ease),box-shadow .3s var(--ease);
 }
-.waitlist::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--white);opacity:.85}
-.waitlist h3{
-  font-family:var(--mono);font-weight:600;
-  font-size:clamp(1.5rem,4vw,2.3rem);line-height:1.1;letter-spacing:-.02em;
-  margin:0 0 14px;
-}
-.waitlist h3 .dim{color:var(--gray)}
-.waitlist .wl-sub{
-  font-family:var(--mono);font-size:clamp(.86rem,1.6vw,1rem);color:var(--gray-bright);
-  max-width:46ch;margin:0 auto 28px;line-height:1.55;
-}
-.wl-form{
-  display:flex;gap:8px;max-width:440px;margin:0 auto;
-  flex-wrap:wrap;justify-content:center;
+.wl-card:hover{transform:translateY(-3px);border-color:var(--hairline-hi);box-shadow:0 14px 40px -22px rgba(0,0,0,.9)}
+.wl-row{
+  display:flex;gap:10px;flex-wrap:wrap;
 }
 .wl-input{
-  flex:1;min-width:220px;
-  background:var(--black);border:1px solid var(--hairline-hi);
-  color:var(--white);font-family:var(--mono);font-size:.9rem;
-  padding:14px 18px;border-radius:100px;
+  flex:1;min-width:200px;
+  background:transparent;border:1px solid var(--hairline-hi);
+  color:var(--white);font-family:var(--mono);font-size:.86rem;letter-spacing:.02em;
+  padding:12px 18px;border-radius:var(--r-sm);
   transition:border-color .25s var(--ease);
 }
 .wl-input::placeholder{color:var(--gray)}
 .wl-input:focus{outline:none;border-color:var(--gray-bright)}
 .wl-btn{
-  font-family:var(--mono);font-size:.76rem;letter-spacing:.12em;text-transform:uppercase;
-  display:inline-flex;align-items:center;gap:.6em;
-  padding:14px 24px;border-radius:100px;border:1px solid transparent;cursor:pointer;
-  background:var(--white);color:var(--black);
+  font-family:var(--mono);font-size:.74rem;letter-spacing:.16em;text-transform:uppercase;
+  display:inline-flex;align-items:center;justify-content:center;gap:.6em;
+  padding:0 22px;border-radius:var(--r-sm);border:1px solid transparent;cursor:pointer;
+  background:var(--white);color:var(--black);min-height:46px;white-space:nowrap;
   transition:transform .25s var(--ease),opacity .25s var(--ease);
 }
 .wl-btn:hover{transform:translateY(-2px);opacity:.9}
 .wl-btn:active{transform:translateY(0)}
 .wl-btn:disabled{opacity:.5;cursor:default;transform:none}
 .wl-status{
-  font-family:var(--mono);font-size:.84rem;color:var(--gray-bright);
-  margin-top:18px;min-height:1.2em;letter-spacing:.04em;
-  transition:opacity .3s var(--ease);
+  font-family:var(--mono);font-size:.78rem;color:var(--gray-bright);
+  min-height:1.2em;letter-spacing:.04em;
+  transition:color .3s var(--ease);
 }
 .wl-status.ok{color:var(--white)}
 .wl-status.err{color:#ff6b6b}
@@ -561,8 +553,9 @@ strong{color:#fff;font-weight:600}
   .price-foot{font-size:.62rem;padding-top:16px;margin-top:24px}
 
   /* ---- WAITLIST: stack input + button ---- */
-  .wl-form{flex-direction:column;max-width:none}
+  .wl-row{flex-direction:column}
   .wl-input,.wl-btn{width:100%;min-width:0;justify-content:center}
+  .wl-card{padding:22px 20px}
 
   /* ---- CTA: stacked full-width ---- */
   .cta{padding:clamp(28px,5vw,44px) 0}
@@ -927,10 +920,11 @@ strong{color:#fff;font-weight:600}
 <!-- ===================== WAITLIST ===================== -->
 <section class="section wrap" id="waitlist">
   <p class="eyebrow" data-reveal>iOS is coming</p>
-  <div class="waitlist" data-reveal>
-    <h3>Get Monolog on iPhone. <span class="dim">First.</span></h3>
-    <p class="wl-sub">Web works today. The iOS app is being built right now. Drop your email — I'll ping you the day it ships. No spam, no newsletters, just the one message.</p>
-    <form class="wl-form" id="wl-form" autocomplete="on" novalidate>
+  <h2 class="title" data-reveal>Get it on iPhone. <span class="dim">First.</span></h2>
+  <p class="lead" data-reveal>Web works today. The iOS app is in the works. Drop your email — I'll ping you the day it ships. One message, no spam.</p>
+
+  <div class="wl-card" data-reveal style="margin-top:34px;max-width:520px">
+    <form class="wl-row" id="wl-form" autocomplete="on" novalidate>
       <input
         class="wl-input"
         type="email"
