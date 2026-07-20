@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "node scripts/build-web.js",
+  "outputDirectory": "dist",
+  "framework": null,
+  "rewrites": [
+    { "source": "/app", "destination": "/app/" }
+  ],
+  "redirects": [
+    { "source": "/app/index.html", "destination": "/app/", "permanent": false }
+  ]
+}

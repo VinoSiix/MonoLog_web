@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
 import {
   ActivityIndicator,
   Alert,
@@ -23,13 +22,19 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { analyzeNote, transcribeAudio } from './src/api';
 import {
+  addNotificationResponseListener,
   cancelReminder,
   requestPermissions,
   scheduleReminder,
 } from './src/notifications';
 import type { AnalyzeResponse, Note, Reminder } from './src/types';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
-import { Audio } from 'expo-av';
+import {
+  AudioModule,
+  RecordingPresets,
+  setAudioModeAsync,
+  useAudioRecorder,
+} from 'expo-audio';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -38,10 +43,12 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 
 const BLACK = '#000000';
 const WHITE = '#FFFFFF';
-const DIM = '#555555';
+const DIM = '#777777';
 
-const NOTES_KEY = 'minnotes.notes';
-const REMINDERS_KEY = 'minnotes.reminders';
+const IS_WEB = Platform.OS === 'web';
+
+const NOTES_KEY = 'monolog.notes';
+const REMINDERS_KEY = 'monolog.reminders';
 
 // ─── Write Pad ──────────────────────────────────────────────────
 
@@ -56,185 +63,290 @@ function WritePad({
   const [loading, setLoading] = useState(false);
   const [listening, setListening] = useState(false);
   const [processing, setProcessing] = useState(false);
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const finishingRef = useRef(false);
-  const audioReadyRef = useRef(true);
+  const [saving, setSaving] = useState(false);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const processingRef = useRef(false);
   const buttonOpacity = useRef(new Animated.Value(1)).current;
   const waveOpacity = useRef(new Animated.Value(0)).current;
-  const barAnims = useRef(Array.from({ length: 4 }, () => new Animated.Value(0.5))).current;
-  const waveLoopRef = useRef<Animated.CompositeAnimation | null>(null);
-  const silenceTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const lastSoundRef = useRef<number>(Date.now());
+  const pulseAnim = useRef(new Animated.Value(0.8)).current;
+  const pulseLoopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savingOpacity = useRef(new Animated.Value(0)).current;
+  const savingPulse = useRef<Animated.CompositeAnimation | null>(null);
+  const draftFade = useRef(new Animated.Value(1)).current;
+  const savingFade = useRef(new Animated.Value(0)).current;
+  const recordingRef = useRef(false);
+  const thinkingAnim = useRef(new Animated.Value(0)).current;
+  const [dotCount, setDotCount] = useState(0);
 
-  // ── Smooth wave with 10-step sine-like cycle ──────────────────
-  const startWave = () => {
+  // ── Simple pulsing dot ────────────────────────────────────────
+  const startPulse = () => {
     Animated.parallel([
       Animated.timing(buttonOpacity, { toValue: 0, duration: 250, useNativeDriver: true }),
       Animated.timing(waveOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
     ]).start();
 
-    const ranges: [number, number][] = [
-      [0.3, 1.9],
-      [0.5, 1.5],
-      [0.2, 1.7],
-      [0.4, 1.4],
-    ];
-
-    const loops = barAnims.map((anim, i) => {
-      const [low, high] = ranges[i];
-      const speed = 320 + i * 40;
-
-      // Build a smooth sine-like cycle from low→high→low with 6 intermediate points
-      const pts = [low, low + (high - low) * 0.3, high, high - (high - low) * 0.3, low];
-      const seq = pts.map((v) =>
-        Animated.timing(anim, {
-          toValue: v,
-          duration: speed / pts.length,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      );
-      return Animated.loop(Animated.sequence(seq));
-    });
-
-    const composite = Animated.parallel(loops);
-    composite.start();
-    waveLoopRef.current = composite;
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.3, duration: 500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.8, duration: 500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ]),
+    );
+    pulse.start();
+    pulseLoopRef.current = pulse;
   };
 
-  const stopWave = () => {
-    waveLoopRef.current?.stop();
-    barAnims.forEach((a) => { a.setValue(0.5); });
+  const stopPulse = () => {
+    pulseLoopRef.current?.stop();
+    pulseAnim.setValue(0.8);
     Animated.parallel([
       Animated.timing(buttonOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
       Animated.timing(waveOpacity, { toValue: 0, duration: 200, useNativeDriver: true }),
     ]).start();
   };
 
-  // ── Silence detection ──────────────────────────────────────────
-  const startSilenceDetector = async () => {
-    lastSoundRef.current = Date.now();
-    silenceTimerRef.current = setInterval(async () => {
-      try {
-        const rec = recordingRef.current;
-        if (!rec) return;
-        const status = await rec.getStatusAsync();
-        if (!status.isRecording) return;
-        const metering = (status as any).metering ?? -160;
-        // dB: -160 (silent) to 0 (loud). Threshold at -45 dB.
-        if (metering > -45) {
-          lastSoundRef.current = Date.now();
-        } else if (Date.now() - lastSoundRef.current > 2000) {
-          // 2 seconds of silence — auto-stop
-          if (finishingRef.current) return;
-          finishingRef.current = true;
-          clearInterval(silenceTimerRef.current!);
-          silenceTimerRef.current = null;
-          await finishRecording();
-        }
-      } catch {}
-    }, 200);
+  // ── Silence detection via timeout ───
+  const startAutoStop = () => {
+    // Auto-stop after 60 seconds max
+    silenceTimerRef.current = setTimeout(() => {
+      if (!processingRef.current && recorder.isRecording) {
+        recordingRef.current = false;
+        stopPulse();
+        setListening(false);
+        setProcessing(true);
+        processingRef.current = true;
+        (async () => {
+          try {
+            await recorder.stop();
+            if (recorder.uri) {
+              await processAudioData(recorder.uri, 'audio/mp4');
+            } else {
+              setProcessing(false);
+              processingRef.current = false;
+            }
+          } catch (e: any) {
+            Alert.alert('Recording failed', e?.message ?? 'Unknown error');
+            setProcessing(false);
+            processingRef.current = false;
+          }
+        })();
+      }
+    }, 60000);
   };
 
-  const stopSilenceDetector = () => {
+  const stopAutoStop = () => {
     if (silenceTimerRef.current) {
-      clearInterval(silenceTimerRef.current);
+      clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
   };
 
-  // ── Finish recording (shared between manual stop and auto-stop) ─
-  const finishRecording = async (): Promise<void> => {
-    if (finishingRef.current) return;
-    finishingRef.current = true;
-    audioReadyRef.current = false;
-    stopWave();
-    stopSilenceDetector();
-    setListening(false);
-    setProcessing(true);
+  // ── Process recorded audio file ──────────────────────────────
+  const processAudioData = async (uri: string, mimeType: string) => {
     try {
-      const rec = recordingRef.current;
-      recordingRef.current = null;
-      if (!rec) return;
-      await rec.stopAndUnloadAsync();
-      const uri = rec.getURI();
-      if (!uri) {
-        Alert.alert('Error', 'No recording data.');
-        return;
+      const text = await transcribeAudio(uri, mimeType);
+      // Skip empty/silent transcriptions (just punctuation or whitespace)
+      if (text && text.trim().replace(/[.\s]/g, '').length > 0) {
+        setDraft((prev) => (prev ? prev + ' ' + text : text));
       }
-      const text = await transcribeAudio(uri);
-      if (text) setDraft((prev) => (prev ? prev + ' ' + text : text));
     } catch (e: any) {
       Alert.alert('Transcription failed', e?.message ?? 'Unknown error');
     } finally {
       await new Promise((r) => setTimeout(r, 300));
       setProcessing(false);
-      finishingRef.current = false;
-      audioReadyRef.current = true;
+      processingRef.current = false;
     }
   };
 
-  const toggleMic = async () => {
-    if (processing || !audioReadyRef.current) return;
-
-    if (listening) {
-      await finishRecording();
-      return;
-    }
-
-    // Request mic permission
-    const perm = await Audio.requestPermissionsAsync();
-    if (!perm.granted) {
-      Alert.alert('Permission needed', 'Microphone access is required for voice input.');
-      return;
-    }
-
-    // Start recording
+  // ── Start recording ──────────────────────────────────────────
+  const startRecording = async () => {
+    if (processingRef.current || recordingRef.current) return;
+    recordingRef.current = true;
+    setProcessing(true);
+    processingRef.current = true;
     try {
-      // Configure audio session right before recording (expo-av style)
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-      });
-      const { recording } = await Audio.Recording.createAsync({
-        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        isMeteringEnabled: true,
-      } as any);
-      recordingRef.current = recording;
+      await recorder.prepareToRecordAsync();
+      // User already released? Don't start.
+      if (!processingRef.current) return;
+      recorder.record();
       setListening(true);
-      startWave();
-      startSilenceDetector();
+      setProcessing(false);
+      processingRef.current = false;
+      startPulse();
+      startAutoStop();
     } catch (e: any) {
-      audioReadyRef.current = true;
-      Alert.alert('Recording failed', e?.message ?? 'Could not start mic');
+      setProcessing(false);
+      processingRef.current = false;
+      Alert.alert('Recording failed', e?.message ?? 'Could not access microphone');
+    }
+  };
+
+  // ── Stop recording ───────────────────────────────────────────
+  const stopRecording = async () => {
+    if (!recordingRef.current) return;
+    recordingRef.current = false;
+    // If recording hasn't fully started yet, signal abort.
+    if (processingRef.current && !listening) {
+      processingRef.current = false;
+      return;
+    }
+    stopAutoStop();
+    stopPulse();
+    setListening(false);
+    setProcessing(true);
+    processingRef.current = true;
+    try {
+      await recorder.stop();
+      if (recorder.uri) {
+        await processAudioData(recorder.uri, 'audio/mp4');
+      } else {
+        setProcessing(false);
+        processingRef.current = false;
+      }
+    } catch (e: any) {
+      Alert.alert('Recording failed', e?.message ?? 'Unknown error');
+      setProcessing(false);
+      processingRef.current = false;
+    }
+  };
+
+  // ── Hold to record ───────────────────────────────────────────
+  const handleMicPressIn = async () => {
+    await startRecording();
+  };
+
+  const handleMicPressOut = async () => {
+    if (recordingRef.current) {
+      await stopRecording();
     }
   };
 
   // Persist draft.
   useEffect(() => {
-    AsyncStorage.setItem('minnotes.draft', draft);
+    AsyncStorage.setItem('monolog.draft', draft);
   }, [draft]);
 
   // Restore draft.
   useEffect(() => {
     (async () => {
       try {
-        const d = await AsyncStorage.getItem('minnotes.draft');
+        const d = await AsyncStorage.getItem('monolog.draft');
         if (d) setDraft(d);
       } catch {}
     })();
   }, []);
 
+  // Request mic permission + configure audio mode on mount.
+  // Skip on web — mic recording is disabled in the web build.
+  useEffect(() => {
+    if (IS_WEB) return;
+    (async () => {
+      try {
+        const { granted } = await AudioModule.requestRecordingPermissionsAsync();
+        if (granted) {
+          await setAudioModeAsync({
+            playsInSilentMode: true,
+            allowsRecording: true,
+          });
+        }
+      } catch {}
+    })();
+  }, []);
+
+  // Cleanup timers/recorder on unmount.
+  useEffect(() => {
+    return () => {
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    };
+  }, []);
+
+  // ── Pulsing "Saving…" text during transcription ──────────────
+  useEffect(() => {
+    if (processing && !listening) {
+      const pulse = Animated.loop(
+        Animated.sequence([
+          Animated.timing(savingOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
+          Animated.timing(savingOpacity, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+        ]),
+      );
+      pulse.start();
+      savingPulse.current = pulse;
+    } else {
+      savingPulse.current?.stop();
+      savingOpacity.setValue(0);
+    }
+    return () => savingPulse.current?.stop();
+  }, [processing, listening, savingOpacity]);
+
+
+  // ── AI thinking animation (color cycling + dots) on "Saving.." ──
+  useEffect(() => {
+    if (saving) {
+      const loop = Animated.loop(
+        Animated.sequence([
+          Animated.timing(thinkingAnim, { toValue: 1, duration: 500, useNativeDriver: false }),
+          Animated.timing(thinkingAnim, { toValue: 0, duration: 500, useNativeDriver: false }),
+        ]),
+      );
+      loop.start();
+
+      let dotI = 0;
+      const dotInterval = setInterval(() => {
+        dotI = (dotI + 1) % 4;
+        setDotCount(dotI);
+      }, 400);
+
+      return () => {
+        loop.stop();
+        clearInterval(dotInterval);
+        thinkingAnim.setValue(0);
+      };
+    } else {
+      setDotCount(0);
+      thinkingAnim.setValue(0);
+    }
+  }, [saving, thinkingAnim]);
+
 
   const send = async () => {
     const text = draft.trim();
-    if (!text) return;
-    setLoading(true);
+    if (!text || saving) return;
 
+    // ── Start save animation ──────────────────────────────────
+    setSaving(true);
+    const saveStart = Date.now();
+    Animated.parallel([
+      Animated.timing(draftFade, {
+        toValue: 0,
+        duration: 220,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: false,
+      }),
+      Animated.timing(savingFade, {
+        toValue: 1,
+        duration: 350,
+        delay: 80,
+        easing: Easing.out(Easing.back(1.3)),
+        useNativeDriver: false,
+      }),
+    ]).start();
+
+    // ── Load existing reminders for context ─────────────────────
+    let existingReminders: Reminder[] = [];
+    try {
+      const raw = await AsyncStorage.getItem(REMINDERS_KEY);
+      if (raw) existingReminders = JSON.parse(raw);
+    } catch {}
+
+    // ── Save logic (API + storage) ──────────────────────────────
     let result: AnalyzeResponse | null = null;
     try {
-      result = await analyzeNote(text, new Date().getTimezoneOffset());
+      result = await analyzeNote(
+        text,
+        new Date().getTimezoneOffset(),
+        undefined,
+        existingReminders.map((r) => ({ id: r.id, title: r.title })),
+      );
     } catch {
       // ── AI backend unavailable — fall back to a plain note ─────
       const note: Note = {
@@ -248,64 +360,233 @@ function WritePad({
       savedNotes.unshift(note);
       await AsyncStorage.setItem(NOTES_KEY, JSON.stringify(savedNotes));
       onNoteCreated();
-      setDraft('');
-      setLoading(false);
-      return;
+      return finishSaving(saveStart);
     }
 
-    // ── AI analysis succeeded — parse result ────────────────────
-    if (result.needsReminder && result.reminder) {
-      // ── Reminder ───────────────────────────────────────────────
-      const fireAt = new Date(result.reminder.datetime);
-      // Don't schedule in the past — clamp to now + 1min.
-      const fireDate =
-        fireAt.getTime() <= Date.now()
-          ? new Date(Date.now() + 60_000)
-          : fireAt;
+    // ── AI analysis succeeded — dispatch by action ──────────────
+    const KNOWN = ['create', 'modify', 'skip', 'delete'];
+    let action = KNOWN.includes(result.action)
+      ? result.action
+      : (result.needsReminder && result.reminder ? 'create' : 'none');
+    // Safety: if action needs reminder data but it's missing, fall back to note
+    if (action === 'create' && !result.reminder) action = 'none';
 
-      let notificationId: string | undefined;
-      try {
-        const granted = await requestPermissions();
-        if (granted) {
-          notificationId = await scheduleReminder({
+    try {
+      switch (action) {
+        case 'create': {
+          // ── New reminder ───────────────────────────────────────────
+          const fireAt = new Date(result.reminder!.datetime);
+          const fireDate =
+            fireAt.getTime() <= Date.now()
+              ? new Date(Date.now() + 60_000)
+              : fireAt;
+          let notificationId: string | undefined;
+          try {
+            const granted = await requestPermissions();
+            if (granted) {
+              notificationId = await scheduleReminder({
+                title: result.title,
+                fireAt: fireDate,
+                recurring: result.reminder!.recurring,
+                daysOfWeek: result.reminder!.daysOfWeek ?? undefined,
+                remindBeforeMinutes: result.reminder!.remindBeforeMinutes,
+              });
+            }
+          } catch {}
+          const reminder: Reminder = {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
             title: result.title,
-            fireAt: fireDate,
-            recurring: result.reminder.recurring,
-          });
+            fireAt: fireDate.toISOString(),
+            recurring: result.reminder!.recurring,
+            notificationId: notificationId ?? '',
+            daysOfWeek: result.reminder!.daysOfWeek ?? undefined,
+            remindBeforeMinutes: result.reminder!.remindBeforeMinutes,
+          };
+          const existing = await AsyncStorage.getItem(REMINDERS_KEY);
+          const reminders: Reminder[] = existing ? JSON.parse(existing) : [];
+          reminders.unshift(reminder);
+          await AsyncStorage.setItem(REMINDERS_KEY, JSON.stringify(reminders));
+          onReminderCreated();
+          break;
         }
-      } catch {}
 
-      const reminder: Reminder = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        title: result.title,
-        fireAt: fireDate.toISOString(),
-        recurring: result.reminder.recurring,
-        notificationId: notificationId ?? '',
-      };
+        case 'modify': {
+          // ── Modify an existing reminder ────────────────────────────
+          const targetTitle = result.targetReminderTitle?.toLowerCase() || result.title.toLowerCase();
+          const target = existingReminders.find((r) => r.title.toLowerCase().includes(targetTitle) || targetTitle.includes(r.title.toLowerCase()));
+          if (!target) {
+            // Fall back to create if no match
+            const fireAt = new Date(result.reminder?.datetime || result.modify?.datetime || new Date().toISOString());
+            const fireDate = fireAt.getTime() <= Date.now() ? new Date(Date.now() + 60_000) : fireAt;
+            let notificationId: string | undefined;
+            try {
+              if (await requestPermissions()) {
+                notificationId = await scheduleReminder({
+                  title: result.modify?.title || result.title,
+                  fireAt: fireDate,
+                  recurring: result.modify?.recurring || result.reminder?.recurring || 'none',
+                  daysOfWeek: result.modify?.daysOfWeek ?? undefined,
+                  remindBeforeMinutes: result.modify?.remindBeforeMinutes ?? result.reminder?.remindBeforeMinutes,
+                });
+              }
+            } catch {}
+            const reminder: Reminder = {
+              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+              title: result.modify?.title || result.title,
+              fireAt: fireDate.toISOString(),
+              recurring: result.modify?.recurring || result.reminder?.recurring || 'none',
+              notificationId: notificationId ?? '',
+              daysOfWeek: result.modify?.daysOfWeek ?? undefined,
+              remindBeforeMinutes: result.modify?.remindBeforeMinutes ?? result.reminder?.remindBeforeMinutes,
+            };
+            const existing = await AsyncStorage.getItem(REMINDERS_KEY);
+            const reminders: Reminder[] = existing ? JSON.parse(existing) : [];
+            reminders.unshift(reminder);
+            await AsyncStorage.setItem(REMINDERS_KEY, JSON.stringify(reminders));
+            onReminderCreated();
+          } else {
+            // Cancel old notifications
+            try { await cancelReminder(target.notificationId); } catch {}
+            // Apply modify fields
+            const mod = result.modify || {};
+            const newFireAt = mod.datetime ? new Date(mod.datetime) : new Date(target.fireAt);
+            const newRecurring = mod.recurring || target.recurring;
+            const newDaysOfWeek = mod.daysOfWeek !== undefined ? mod.daysOfWeek : target.daysOfWeek;
+            const newRemindBefore = mod.remindBeforeMinutes ?? target.remindBeforeMinutes;
+            const fireDate = newFireAt.getTime() <= Date.now() ? new Date(Date.now() + 60_000) : newFireAt;
+            let notificationId: string | undefined;
+            try {
+              if (await requestPermissions()) {
+                notificationId = await scheduleReminder({
+                  title: mod.title || target.title,
+                  fireAt: fireDate,
+                  recurring: newRecurring,
+                  daysOfWeek: newDaysOfWeek ?? undefined,
+                  remindBeforeMinutes: newRemindBefore,
+                });
+              }
+            } catch {}
+            await updateReminder(target.id, {
+              title: mod.title || target.title,
+              fireAt: fireDate.toISOString(),
+              recurring: newRecurring,
+              daysOfWeek: newDaysOfWeek,
+              remindBeforeMinutes: newRemindBefore,
+              notificationId: notificationId ?? target.notificationId,
+            });
+          }
+          break;
+        }
 
-      const existing = await AsyncStorage.getItem(REMINDERS_KEY);
-      const reminders: Reminder[] = existing ? JSON.parse(existing) : [];
-      reminders.unshift(reminder);
-      await AsyncStorage.setItem(REMINDERS_KEY, JSON.stringify(reminders));
-      onReminderCreated();
-    } else {
-      // ── Not a reminder — save as note ────────────────────────
-      const note: Note = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        raw: text,
-        title: result.title,
-        createdAt: new Date().toISOString(),
-      };
-      const existingNotes = await AsyncStorage.getItem(NOTES_KEY);
-      const savedNotes: Note[] = existingNotes ? JSON.parse(existingNotes) : [];
-      savedNotes.unshift(note);
-      await AsyncStorage.setItem(NOTES_KEY, JSON.stringify(savedNotes));
-      onNoteCreated();
+        case 'skip': {
+          // ── Skip one occurrence (today) of a recurring reminder ───
+          const skipTargetTitle = result.targetReminderTitle?.toLowerCase() || result.title.toLowerCase();
+          const skipTarget = existingReminders.find(
+            (r) => r.title.toLowerCase().includes(skipTargetTitle) || skipTargetTitle.includes(r.title.toLowerCase()),
+          );
+          if (skipTarget) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const skipDates = [...(skipTarget.skipDates || []), todayStr];
+            try { await cancelReminder(skipTarget.notificationId); } catch {}
+            let notificationId = '';
+            try {
+              if (await requestPermissions()) {
+                notificationId = await scheduleReminder({
+                  title: skipTarget.title,
+                  fireAt: new Date(skipTarget.fireAt),
+                  recurring: skipTarget.recurring,
+                  daysOfWeek: skipTarget.daysOfWeek,
+                  remindBeforeMinutes: skipTarget.remindBeforeMinutes,
+                });
+              }
+            } catch {}
+            await updateReminder(skipTarget.id, { skipDates, notificationId: notificationId || skipTarget.notificationId });
+          }
+          break;
+        }
+
+        case 'delete': {
+          // ── Delete an existing reminder ────────────────────────────
+          const delTargetTitle = result.targetReminderTitle?.toLowerCase() || result.title.toLowerCase();
+          const delTarget = existingReminders.find(
+            (r) => r.title.toLowerCase().includes(delTargetTitle) || delTargetTitle.includes(r.title.toLowerCase()),
+          );
+          if (delTarget) {
+            try { await cancelReminder(delTarget.notificationId); } catch {}
+            await deleteReminder(delTarget.id);
+          }
+          break;
+        }
+
+        default: {
+          // ── Not a reminder action — save as note ────────────────
+          const note: Note = {
+            id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            raw: text,
+            title: result.title,
+            createdAt: new Date().toISOString(),
+          };
+          const existingNotes = await AsyncStorage.getItem(NOTES_KEY);
+          const savedNotes: Note[] = existingNotes ? JSON.parse(existingNotes) : [];
+          savedNotes.unshift(note);
+          await AsyncStorage.setItem(NOTES_KEY, JSON.stringify(savedNotes));
+          onNoteCreated();
+          break;
+        }
+      }
+    } catch {
+      // If anything goes wrong (e.g. storage failure), still finish saving
     }
 
-    setDraft('');
-    setLoading(false);
+    await finishSaving(saveStart);
   };
+
+  // ── Finish saving animation ─────────────────────────────────
+  const finishSaving = async (startTime: number) => {
+    // Show "Saving.." for at least 1s total
+    const elapsed = Date.now() - startTime;
+    if (elapsed < 1000) {
+      await new Promise((r) => setTimeout(r, 1000 - elapsed));
+    }
+    // Saving text fades out
+    await new Promise<void>((resolve) => {
+      Animated.timing(savingFade, {
+        toValue: 0,
+        duration: 180,
+        easing: Easing.in(Easing.cubic),
+        useNativeDriver: false,
+      }).start(resolve);
+    });
+    // Clear draft so placeholder shows, then animate area back in
+    setDraft('');
+    setSaving(false);
+    Animated.timing(draftFade, {
+      toValue: 1,
+      duration: 300,
+      easing: Easing.out(Easing.back(1.2)),
+      useNativeDriver: false,
+    }).start();
+  };
+
+  // ── Animated color for the "Saving.." thinking effect ────
+  const savingTextColor = thinkingAnim.interpolate({
+    inputRange: [0, 0.5, 1],
+    outputRange: [DIM, '#FFFFFF', DIM],
+  });
+
+  // ── Slide / scale for the send animation ──────────────────
+  const draftSlideY = draftFade.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-24, 0],
+  });
+  const draftScale = draftFade.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.96, 1],
+  });
+  const savingSlideY = savingFade.interpolate({
+    inputRange: [0, 1],
+    outputRange: [16, 0],
+  });
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -315,12 +596,12 @@ function WritePad({
           <Text style={styles.headerTitle}>write</Text>
           <Pressable
             onPress={send}
-            disabled={loading || draft.trim().length === 0}
+            disabled={loading || saving || draft.trim().length === 0}
             hitSlop={14}
             style={({ pressed }) => [
               styles.sendBtn,
               pressed && styles.sendBtnPressed,
-              (loading || draft.trim().length === 0) && styles.sendBtnDisabled,
+              (loading || saving || draft.trim().length === 0) && styles.sendBtnDisabled,
             ]}
           >
             {loading ? (
@@ -336,59 +617,87 @@ function WritePad({
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
           <View style={{ position: 'relative', flex: 1 }}>
-            {!draft && (
-              <Text
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: 0,
-                  color: DIM,
-                  fontSize: 22,
-                  lineHeight: 34,
-                  fontWeight: '300',
-                }}
-              >
-                type your thought…
-              </Text>
-            )}
-            <TextInput
-              value={draft}
-              onChangeText={setDraft}
-              placeholder=""
-              placeholderTextColor={DIM}
-              multiline
-              autoCorrect
-              autoFocus={false}
+            <Animated.View style={{ flex: 1, opacity: draftFade, transform: [{ translateY: draftSlideY }, { scale: draftScale }] }} pointerEvents={saving ? 'none' : 'auto'}>
+              {!draft && (
+                <Text
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    color: DIM,
+                    fontSize: 22,
+                    lineHeight: 34,
+                    fontWeight: '300',
+                  }}
+                >
+                  type your thought…
+                </Text>
+              )}
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                placeholder=""
+                placeholderTextColor={DIM}
+                multiline
+                autoCorrect
+                autoFocus={false}
               keyboardAppearance="dark"
               selectionColor="#FFFFFF"
               cursorColor="#FFFFFF"
               style={[styles.input, { marginLeft: -3 }]}
             />
+            </Animated.View>
+
+            {/* Saving.. overlay */}
+            <Animated.Text
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                color: savingTextColor,
+                fontSize: 22,
+                lineHeight: 34,
+                fontWeight: '300',
+                opacity: savingFade,
+                transform: [{ translateY: savingSlideY }],
+              }}
+            >
+              Saving{'.'.repeat(dotCount)}
+            </Animated.Text>
           </View>
         </KeyboardAvoidingView>
 
-        {/* Mic area — bottom center */}
-        <View style={styles.micArea}>
-          {/* Soundwave bars */}
-          <Animated.View style={[styles.waveRow, { opacity: waveOpacity }]}>
-              <Animated.View style={[styles.waveBar, { transform: [{ scaleY: barAnims[0] }] }]} />
-              <Animated.View style={[styles.waveBar, { transform: [{ scaleY: barAnims[1] }] }]} />
-              <Animated.View style={[styles.waveBar, { transform: [{ scaleY: barAnims[2] }] }]} />
-              <Animated.View style={[styles.waveBar, { transform: [{ scaleY: barAnims[3] }] }]} />
-          </Animated.View>
+        {/* Mic area — bottom center (hidden on web; mic recording is native-only) */}
+        {!IS_WEB && (
+          <View style={styles.micArea}>
+            {/* Pulsing dot */}
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.pulseDot,
+                { opacity: waveOpacity, transform: [{ scale: pulseAnim }] },
+              ]}
+            />
 
-          {/* Mic button */}
-          <Animated.View style={{ opacity: buttonOpacity }}>
-            <Pressable onPress={toggleMic} hitSlop={12} style={styles.micBtn}>
-              {processing ? (
-                <ActivityIndicator color={BLACK} size="small" />
-              ) : (
-                <Ionicons name="mic-outline" size={28} color={DIM} />
-              )}
-            </Pressable>
-          </Animated.View>
-        </View>
+            {/* Mic button */}
+            <Animated.View style={{ opacity: buttonOpacity }}>
+              <Pressable onPressIn={handleMicPressIn} onPressOut={handleMicPressOut} hitSlop={12} style={styles.micBtn}>
+                {processing ? (
+                  <ActivityIndicator color={BLACK} size="small" />
+                ) : (
+                  <Ionicons name="mic-outline" size={32} color={WHITE} />
+                )}
+              </Pressable>
+            </Animated.View>
+
+            {/* Saving text — fades in during transcription */}
+            <Animated.Text style={[styles.savingText, { opacity: savingOpacity }]}>
+              Saving…
+            </Animated.Text>
+          </View>
+        )}
       </View>
     </TouchableWithoutFeedback>
   );
@@ -460,6 +769,8 @@ function RemindersPad({
         title: editTitle.trim(),
         fireAt: editDate,
         recurring: r.recurring,
+        daysOfWeek: r.daysOfWeek,
+        remindBeforeMinutes: r.remindBeforeMinutes,
       });
     } catch {}
     await onUpdate(r.id, {
@@ -675,7 +986,13 @@ function RemindersPad({
                             <Text style={styles.reminderTitle}>{r.title}</Text>
                             <Text style={styles.reminderMeta}>
                               {formatDate(r.fireAt)}
-                              {r.recurring !== 'none' && ` · ${r.recurring}`}
+                              {r.skipDates?.includes(new Date().toISOString().split('T')[0])
+                                ? ' · skipped today'
+                                : r.recurring !== 'none' && (
+                                  r.daysOfWeek && r.daysOfWeek.length > 0
+                                    ? ` · ${r.daysOfWeek.map((d: number) => ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(', ')}`
+                                    : ` · ${r.recurring}`
+                                )}
                             </Text>
                           </Pressable>
                         </View>
@@ -836,6 +1153,16 @@ function MonthView({
     const offset = dir === 'left' ? 300 : -300;
     slideAnim.setValue(offset);
     setCursor(newCursor);
+    // Keep selected day in the new month (clamp to last day if overflow)
+    if (selected) {
+      const dayNum = Math.min(
+        parseInt(selected.split('-')[2], 10),
+        new Date(newCursor.getFullYear(), newCursor.getMonth() + 1, 0).getDate(),
+      );
+      setSelected(
+        `${newCursor.getFullYear()}-${String(newCursor.getMonth() + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`,
+      );
+    }
     Animated.timing(slideAnim, {
       toValue: 0,
       duration: 250,
@@ -874,20 +1201,29 @@ function MonthView({
 
   const dateStr = (day: number) =>
     `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const localDateStr = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const isSkipped = (r: Reminder, dateStr: string) => r.skipDates?.includes(dateStr) ?? false;
 
   const hasEvent = (day: number): boolean => {
     const ds = dateStr(day);
     const d = new Date(year, month, day);
     return (
       reminders.some((r) => {
+        if (isSkipped(r, ds)) return false;
         if (r.recurring === 'daily') return true;
         const rd = new Date(r.fireAt);
-        if (r.recurring === 'none') return rd.toISOString().split('T')[0] === ds;
-        if (r.recurring === 'weekly') return rd.getDay() === d.getDay();
+        if (r.recurring === 'none') return localDateStr(rd) === ds;
+        if (r.recurring === 'weekly') {
+          if (r.daysOfWeek && r.daysOfWeek.length > 0) return r.daysOfWeek.includes(d.getDay());
+          return rd.getDay() === d.getDay();
+        }
         if (r.recurring === 'monthly') return rd.getDate() === d.getDate();
+        if (r.recurring === 'yearly') return rd.getMonth() === d.getMonth() && rd.getDate() === d.getDate();
         return false;
       }) ||
-      notes.some((n) => new Date(n.createdAt).toISOString().split('T')[0] === ds)
+      notes.some((n) => localDateStr(new Date(n.createdAt)) === ds)
     );
   };
 
@@ -897,18 +1233,29 @@ function MonthView({
     const items: { id: string; title: string; meta: string }[] = [];
 
     reminders.forEach((r) => {
+      if (isSkipped(r, selected)) return;
       if (r.recurring === 'daily') {
         items.push({ id: r.id, title: r.title, meta: 'daily' });
       } else {
         const rd = new Date(r.fireAt);
-        const rds = rd.toISOString().split('T')[0];
+        const rds = localDateStr(rd);
         if (r.recurring === 'none' && rds === selected) {
           const opts: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit' };
           items.push({ id: r.id, title: r.title, meta: rd.toLocaleTimeString('en-US', opts) });
-        } else if (r.recurring === 'weekly' && rd.getDay() === d.getDay()) {
-          items.push({ id: r.id, title: r.title, meta: 'weekly' });
+        } else if (r.recurring === 'weekly') {
+          if (r.daysOfWeek && r.daysOfWeek.length > 0) {
+            if (r.daysOfWeek.includes(d.getDay())) {
+              const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+              const label = r.daysOfWeek.map(dd => dayNames[dd]).join(', ');
+              items.push({ id: r.id, title: r.title, meta: label });
+            }
+          } else if (rd.getDay() === d.getDay()) {
+            items.push({ id: r.id, title: r.title, meta: 'weekly' });
+          }
         } else if (r.recurring === 'monthly' && rd.getDate() === d.getDate()) {
           items.push({ id: r.id, title: r.title, meta: 'monthly' });
+        } else if (r.recurring === 'yearly' && rd.getMonth() === d.getMonth() && rd.getDate() === d.getDate()) {
+          items.push({ id: r.id, title: r.title, meta: 'yearly' });
         }
       }
     });
@@ -1125,27 +1472,24 @@ export default function App() {
 
   // Request notification permissions on startup so they're ready.
   useEffect(() => {
-    (async () => {
-      const { status } = await Notifications.getPermissionsAsync();
-      if (status !== 'granted') {
-        await Notifications.requestPermissionsAsync();
-      }
-    })();
+    requestPermissions();
   }, []);
 
   // Listen for notification taps — switch to reminders tab.
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener(
-      (_response) => {
-        setTab('reminders');
-        loadReminders();
-      },
-    );
+    const sub = addNotificationResponseListener(() => {
+      setTab('reminders');
+      loadReminders();
+    });
     return () => sub.remove();
   }, [loadReminders]);
 
   const deleteReminder = useCallback(
     async (id: string) => {
+      const reminder = reminders.find((r) => r.id === id);
+      if (reminder) {
+        try { await cancelReminder(reminder.notificationId); } catch {}
+      }
       const next = reminders.filter((r) => r.id !== id);
       setReminders(next);
       await AsyncStorage.setItem(REMINDERS_KEY, JSON.stringify(next));
@@ -1297,26 +1641,30 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     height: 80,
   },
-  waveRow: {
+  pulseDot: {
     position: 'absolute',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    height: 50,
-  },
-  waveBar: {
-    width: 6,
-    height: 28,
-    borderRadius: 3,
+    top: 2,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: WHITE,
   },
   micBtn: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#1a1a1a',
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#2a2a2a',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  savingText: {
+    color: DIM,
+    fontSize: 12,
+    letterSpacing: 1,
+    marginTop: 10,
+    textTransform: 'uppercase',
   },
 
   // Reminders

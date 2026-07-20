@@ -3,4 +3,4 @@ main = "src/index.ts"
 compatibility_date = "2026-06-01"
 
 [vars]
-GROQ_API_KEY = "gsk_..."
+GROQ_API_KEY = "REDACTED_GROQ_KEY_ROTATE_NOW"
