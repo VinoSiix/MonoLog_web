@@ -342,17 +342,8 @@ strong{color:#fff;font-weight:600}
 }
 
 /* ============================================================
-   WAITLIST
-   Shares primitives with the rest of the page:
-   eyebrow + h2.title + lead + a single .card-style form.
+   WAITLIST — bare form, no surrounding card.
    ============================================================ */
-.wl-card{
-  border:1px solid var(--hairline);border-radius:var(--r);background:var(--card);
-  padding:clamp(24px,3.4vw,38px);
-  display:flex;flex-direction:column;gap:18px;
-  transition:transform .3s var(--ease),border-color .3s var(--ease),box-shadow .3s var(--ease);
-}
-.wl-card:hover{transform:translateY(-3px);border-color:var(--hairline-hi);box-shadow:0 14px 40px -22px rgba(0,0,0,.9)}
 .wl-row{
   display:flex;gap:10px;flex-wrap:wrap;
 }
@@ -360,7 +351,7 @@ strong{color:#fff;font-weight:600}
   flex:1;min-width:200px;
   background:transparent;border:1px solid var(--hairline-hi);
   color:var(--white);font-family:var(--mono);font-size:.86rem;letter-spacing:.02em;
-  padding:12px 18px;border-radius:var(--r-sm);
+  padding:14px 18px;border-radius:var(--r-sm);
   transition:border-color .25s var(--ease);
 }
 .wl-input::placeholder{color:var(--gray)}
@@ -368,8 +359,8 @@ strong{color:#fff;font-weight:600}
 .wl-btn{
   font-family:var(--mono);font-size:.74rem;letter-spacing:.16em;text-transform:uppercase;
   display:inline-flex;align-items:center;justify-content:center;gap:.6em;
-  padding:0 22px;border-radius:var(--r-sm);border:1px solid transparent;cursor:pointer;
-  background:var(--white);color:var(--black);min-height:46px;white-space:nowrap;
+  padding:0 26px;border-radius:var(--r-sm);border:1px solid transparent;cursor:pointer;
+  background:var(--white);color:var(--black);min-height:48px;white-space:nowrap;
   transition:transform .25s var(--ease),opacity .25s var(--ease);
 }
 .wl-btn:hover{transform:translateY(-2px);opacity:.9}
@@ -377,7 +368,7 @@ strong{color:#fff;font-weight:600}
 .wl-btn:disabled{opacity:.5;cursor:default;transform:none}
 .wl-status{
   font-family:var(--mono);font-size:.78rem;color:var(--gray-bright);
-  min-height:1.2em;letter-spacing:.04em;
+  min-height:1.2em;letter-spacing:.04em;margin-top:14px;max-width:520px;
   transition:color .3s var(--ease);
 }
 .wl-status.ok{color:var(--white)}
@@ -920,24 +911,21 @@ strong{color:#fff;font-weight:600}
 <!-- ===================== WAITLIST ===================== -->
 <section class="section wrap" id="waitlist">
   <p class="eyebrow" data-reveal>iOS is coming</p>
-  <h2 class="title" data-reveal>Get it on iPhone. <span class="dim">First.</span></h2>
-  <p class="lead" data-reveal>Web works today. The iOS app is in the works. Drop your email — I'll ping you the day it ships. One message, no spam.</p>
+  <h2 class="title" data-reveal>Get Monolog. <span class="dim">First.</span></h2>
 
-  <div class="wl-card" data-reveal style="margin-top:34px;max-width:520px">
-    <form class="wl-row" id="wl-form" autocomplete="on" novalidate>
-      <input
-        class="wl-input"
-        type="email"
-        name="email"
-        inputmode="email"
-        placeholder="you@email.com"
-        aria-label="Your email"
-        required
-      />
-      <button class="wl-btn" type="submit" id="wl-btn">Join waitlist</button>
-    </form>
-    <p class="wl-status" id="wl-status" aria-live="polite"></p>
-  </div>
+  <form class="wl-row" id="wl-form" autocomplete="on" novalidate data-reveal style="margin-top:30px;max-width:520px">
+    <input
+      class="wl-input"
+      type="email"
+      name="email"
+      inputmode="email"
+      placeholder="you@email.com"
+      aria-label="Your email"
+      required
+    />
+    <button class="wl-btn" type="submit" id="wl-btn">Join waitlist</button>
+  </form>
+  <p class="wl-status" id="wl-status" aria-live="polite" data-reveal></p>
 </section>
 
 <!-- ===================== PRICING ===================== -->
@@ -971,7 +959,7 @@ strong{color:#fff;font-weight:600}
     </div>
   </div>
 
-  <p class="price-foot" data-reveal>Cancel anytime. · Works on iPhone &amp; Android. · Your notes stay yours.</p>
+  <p class="price-foot" data-reveal>Cancel anytime. · Works on iPhone. · Your notes stay yours.</p>
 </section>
 
 <!-- ===================== CTA ===================== -->
@@ -986,7 +974,7 @@ strong{color:#fff;font-weight:600}
         <span>Open the web app</span>
       </a>
     </div>
-    <p class="note" style="margin-top:22px">Native iOS &amp; Android coming soon. Web works perfectly on mobile &amp; desktop today.</p>
+    <p class="note" style="margin-top:22px">Native iOS coming soon. Web works perfectly on mobile &amp; desktop today.</p>
   </div>
 </section>
 

@@ -1905,7 +1905,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   calDayHead: {
-    flex: 1,
+    width: '14.2857%',
     alignItems: 'center',
     paddingVertical: 6,
   },
@@ -1919,16 +1919,23 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     paddingHorizontal: 16,
   },
+  // Each day cell takes exactly 1/7 of the row width via aspectRatio-based
+  // sizing. We avoid `width: '14.28%'` + nested `flex: 1` because react-native-web
+  // computes percentages against the wrong reference inside flexWrap containers,
+  // which collapses the grid on desktop/tablet. aspectRatio on a width-bound
+  // child resolves consistently across platforms.
   calDay: {
-    width: '14.28%',
+    width: '14.2857%',
     aspectRatio: 1,
     padding: 2,
   },
   calDayEmpty: {
-    flex: 1,
+    width: '100%',
+    height: '100%',
   },
   calDayBtn: {
-    flex: 1,
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 8,
