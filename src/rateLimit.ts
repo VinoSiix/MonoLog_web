@@ -1,0 +1,102 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+/**
+ * Free-tier rate limit — matches the worker's FREE_TIER_DAILY_LIMIT.
+ * Change in both places if you bump it.
+ */
+export const FREE_TIER_DAILY_LIMIT = 5;
+
+/**
+ * Daily free-tier counter for AI sorts.
+ * Stored in AsyncStorage as a tiny JSON blob: { date, used }.
+ *
+ *  - `date` is the local YYYY-MM-DD string. If the stored date doesn't
+ *    match today, the counter resets to 0 — this handles "try again
+ *    tomorrow" without needing a backend round-trip.
+ *  - `used` is how many sorts have been used today.
+ *
+ * The Cloudflare Worker ALSO enforces this limit by IP (see worker/src/index.ts),
+ * so clearing AsyncStorage doesn't bypass it — the worker will return 429
+ * with `error: 'rate_limited'`. The client-side check is purely for UX
+ * (instant feedback, no network round-trip when you're already over).
+ */
+
+const STORAGE_KEY = 'monolog.ratelimit.v1';
+
+interface StoredCount {
+  date: string; // YYYY-MM-DD (local)
+  used: number;
+}
+
+function todayString(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** Returns the current {date, used} count, or a fresh zero-state. */
+async function readCount(): Promise<StoredCount> {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    if (!raw) return { date: todayString(), used: 0 };
+    const parsed = JSON.parse(raw) as StoredCount;
+    if (parsed.date !== todayString()) {
+      // New day → reset.
+      return { date: todayString(), used: 0 };
+    }
+    return parsed;
+  } catch {
+    return { date: todayString(), used: 0 };
+  }
+}
+
+async function writeCount(count: StoredCount): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(count));
+  } catch {
+    // Storage failures shouldn't block the user.
+  }
+}
+
+/** How many free sorts has the user used today (resets at local midnight). */
+export async function getUsedToday(): Promise<number> {
+  return (await readCount()).used;
+}
+
+/** How many free sorts are left today. Never negative. */
+export async function getRemainingToday(): Promise<number> {
+  return Math.max(0, FREE_TIER_DAILY_LIMIT - (await readCount()).used);
+}
+
+/**
+ * Pre-flight check before sending a note to /analyze.
+ * Returns true if the user is under their daily limit, false otherwise.
+ * Use this to short-circuit the request and show a friendly upgrade prompt.
+ */
+export async function canSortMore(): Promise<boolean> {
+  return (await getRemainingToday()) > 0;
+}
+
+/**
+ * Increment today's counter by 1. Call this AFTER a successful /analyze
+ * response (not before — if the request fails, the user shouldn't lose a slot).
+ */
+export async function recordSort(): Promise<void> {
+  const c = await readCount();
+  await writeCount({ date: c.date, used: c.used + 1 });
+}
+
+/**
+ * Sync the local counter with the server's view after a 429.
+ * The worker returns `used` in the rate-limited response — we trust it
+ * over localStorage (the user may have cleared storage). If `serverUsed`
+ * is provided, we overwrite the local count with it. Otherwise just
+ * bump local by 1.
+ */
+export async function syncFromServer(serverUsed?: number): Promise<void> {
+  const c = await readCount();
+  const used = serverUsed ?? c.used + 1;
+  await writeCount({ date: c.date, used });
+}

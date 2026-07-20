@@ -167,8 +167,8 @@ strong{color:#fff;font-weight:600}
   transition:transform .25s var(--ease),opacity .25s var(--ease),background .25s var(--ease),border-color .25s var(--ease),color .25s var(--ease);
 }
 .btn-primary{background:var(--white);color:var(--black)}
-.btn-primary:hover{transform:translateY(-2px);opacity:.9}
-.btn-primary:active{transform:translateY(0)}
+.btn-primary:hover{opacity:.85}
+.btn-primary:active{opacity:.7}
 .btn-ghost{color:var(--gray-bright);border-color:var(--hairline-hi);background:transparent}
 .btn-ghost:hover{color:var(--white);border-color:var(--gray);background:var(--card-hi)}
 .btn-ghost:active{transform:translateY(1px)}
@@ -184,7 +184,7 @@ strong{color:#fff;font-weight:600}
   padding:clamp(24px,3vw,32px);
   transition:transform .3s var(--ease),border-color .3s var(--ease),box-shadow .3s var(--ease);
 }
-.card:hover{transform:translateY(-3px);border-color:var(--hairline-hi);box-shadow:0 14px 40px -22px rgba(0,0,0,.9)}
+.card:hover{border-color:var(--hairline-hi);box-shadow:0 14px 40px -22px rgba(0,0,0,.9)}
 .card .p-eyebrow{
   font-family:var(--mono);font-size:.66rem;letter-spacing:.24em;text-transform:uppercase;
   color:var(--gray-bright);margin:0 0 18px;display:flex;align-items:center;gap:.7em;
@@ -212,7 +212,7 @@ strong{color:#fff;font-weight:600}
   background:var(--card);position:relative;z-index:1;
   transition:border-color .3s var(--ease),transform .3s var(--ease);
 }
-.step:hover .step-num{border-color:var(--gray);transform:translateY(-2px)}
+.step:hover .step-num{border-color:var(--gray)}
 .step-body{padding-top:6px}
 .step-body h3{font-family:var(--mono);font-size:1.12rem;font-weight:600;margin:0 0 8px;letter-spacing:-.01em}
 .step-body p{margin:0;color:var(--gray-bright);font-size:1rem}
@@ -253,10 +253,8 @@ strong{color:#fff;font-weight:600}
 .app-pad{flex:1;padding:6px 16px 0;overflow:hidden}
 .app-write-text{font-family:var(--sans);color:#fff;font-size:15px;line-height:23px;font-weight:300;white-space:pre-wrap}
 .app-write-text .ph{color:#555}
-/* Caret — inline-block, height = 1 line, no translateY (was pushing it
-   below the baseline and looked "too low"). Blink animation actually
-   defined now (was referenced but missing before). */
-.app-caret{display:inline-block;width:1.5px;height:1.1em;background:#fff;vertical-align:text-bottom;animation:blink 1.05s steps(1) infinite}
+/* Caret removed — was distracting on the static phone mockup. */
+.app-caret{display:none}
 @keyframes blink{0%,50%{opacity:1}50.01%,100%{opacity:0}}
 /* reminders / notes list */
 .app-list{flex:1;padding:0 16px;overflow:hidden}
@@ -365,8 +363,8 @@ strong{color:#fff;font-weight:600}
   background:var(--white);color:var(--black);min-height:48px;white-space:nowrap;
   transition:transform .25s var(--ease),opacity .25s var(--ease);
 }
-.wl-btn:hover{transform:translateY(-2px);opacity:.9}
-.wl-btn:active{transform:translateY(0)}
+.wl-btn:hover{opacity:.85}
+.wl-btn:active{opacity:.7}
 .wl-btn:disabled{opacity:.5;cursor:default;transform:none}
 .wl-status{
   font-family:var(--mono);font-size:.78rem;color:var(--gray-bright);
@@ -387,7 +385,7 @@ strong{color:#fff;font-weight:600}
   padding:clamp(22px,2.6vw,32px);
   transition:transform .3s var(--ease),border-color .3s var(--ease),box-shadow .3s var(--ease);
 }
-.price-card:hover{transform:translateY(-3px);box-shadow:0 14px 40px -22px rgba(0,0,0,.9)}
+.price-card:hover{box-shadow:0 14px 40px -22px rgba(0,0,0,.9)}
 .price-card.is-featured{border-color:var(--white)}
 /* Slightly smaller price font for 3-col layout so "$4.99" doesn't dominate */
 .price{
@@ -767,7 +765,7 @@ strong{color:#fff;font-weight:600}
             <span class="app-send"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></span>
           </div>
           <div class="app-pad">
-            <div class="app-write-text">remind me to text<br>sam back friday 9am<span class="app-caret"></span></div>
+            <div class="app-write-text">remind me to text<br>sam back friday 9am</div>
           </div>
           <!-- nav: calendar / create(on) / notifications -->
           <nav class="app-nav">
@@ -966,7 +964,7 @@ strong{color:#fff;font-weight:600}
       </div>
       <p class="benefit">5 AI-sorted thoughts per day. No card, no account. Enough for most people.</p>
       <div class="price-cta">
-        <a class="btn btn-ghost" href="/app/">Try the web app</a>
+        <a class="btn btn-ghost" href="/app/">Try free</a>
       </div>
     </div>
 
@@ -979,7 +977,7 @@ strong{color:#fff;font-weight:600}
       </div>
       <p class="benefit">Unlimited sorting. For people who think a lot.</p>
       <div class="price-cta">
-        <a class="btn btn-primary" href="/app/">Start free, upgrade later</a>
+        <a class="btn btn-primary" href="/app/">Get Pro</a>
       </div>
     </div>
 
@@ -992,7 +990,7 @@ strong{color:#fff;font-weight:600}
       </div>
       <p class="benefit">Same Pro, cheaper if you're staying. For the long-haulers.</p>
       <div class="price-cta">
-        <a class="btn btn-ghost" href="/app/">Start free, upgrade later</a>
+        <a class="btn btn-ghost" href="/app/">Get Pro</a>
       </div>
     </div>
 

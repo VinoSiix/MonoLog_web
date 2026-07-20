@@ -7,6 +7,7 @@
 interface Env {
   GROQ_API_KEY: string;
   WAITLIST: KVNamespace;
+  RATELIMIT: KVNamespace;
 }
 
 interface AnalyzeResponse {
@@ -185,6 +186,46 @@ async function handleRequest(
     }
 
     // ── Route: /analyze ──────────────────────────────────────────
+
+    // ── Free-tier rate limit: 5 analyzes/day per IP ───────────────
+    // Key format: `rl:{ip}:{YYYY-MM-DD}` → count string.
+    // TTL: 48h so stale buckets clean themselves up.
+    // Returns 429 with a friendly message when over quota.
+    // Client-side localStorage gate exists too — this catches users who
+    // clear storage to bypass the limit. KV is eventually-consistent so
+    // a determined abuser could squeeze 1-2 extra requests in under
+    // heavy concurrent load; that's an acceptable tradeoff for a free tier.
+    const FREE_TIER_DAILY_LIMIT = 5;
+    const ip = request.headers.get('CF-Connecting-IP')
+      ?? request.headers.get('X-Forwarded-For')?.split(',')[0]?.trim()
+      ?? 'unknown';
+    const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+    const rlKey = `rl:${ip}:${todayKey}`;
+    const current = parseInt((await env.RATELIMIT.get(rlKey)) ?? '0', 10);
+    if (current >= FREE_TIER_DAILY_LIMIT) {
+      return new Response(JSON.stringify({
+        error: 'rate_limited',
+        message: `Free tier limit reached (${FREE_TIER_DAILY_LIMIT}/day). Try again tomorrow or upgrade to Pro for unlimited.`,
+        limit: FREE_TIER_DAILY_LIMIT,
+        used: current,
+      }), {
+        status: 429,
+        headers: {
+          'Content-Type': 'application/json',
+          'Retry-After': '86400',
+          ...corsHeaders,
+        },
+      });
+    }
+    // Increment + set TTL (only on the first hit do we set the TTL — saves
+    // a KV write on subsequent requests the same day).
+    const next = current + 1;
+    if (current === 0) {
+      await env.RATELIMIT.put(rlKey, String(next), { expirationTtl: 60 * 60 * 48 });
+    } else {
+      await env.RATELIMIT.put(rlKey, String(next));
+    }
+
     const body = await request.json() as { text?: string; timezoneOffset?: number; reminders?: { id: string; title: string }[] };
     const { text, timezoneOffset, reminders } = body;
     if (!text || text.trim().length === 0) {

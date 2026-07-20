@@ -6,9 +6,28 @@ import type { AnalyzeResponse, Reminder } from './types';
 const DEFAULT_BACKEND_URL = 'https://minnotes-worker.timppamsix.workers.dev';
 
 /**
+ * Thrown when the worker returns 429 (free-tier daily limit reached).
+ * Carries the worker's view of `used` so the client can sync localStorage.
+ */
+export class RateLimitError extends Error {
+  used: number;
+  limit: number;
+  constructor(message: string, used: number, limit: number) {
+    super(message);
+    this.name = 'RateLimitError';
+    this.used = used;
+    this.limit = limit;
+  }
+}
+
+/**
  * Send raw note text to the worker for analysis.
  * Optionally include existing reminders so the AI can detect modify/delete/skip intents.
  * Returns the AI-parsed result or throws on failure.
+ *
+ * Throws `RateLimitError` on 429 (free-tier limit reached) — callers should
+ * catch this specifically and show an upgrade prompt instead of falling
+ * back to a plain note.
  */
 export async function analyzeNote(
   text: string,
@@ -23,6 +42,22 @@ export async function analyzeNote(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, timezoneOffset, reminders }),
   });
+
+  if (res.status === 429) {
+    // Free-tier daily limit hit. Surface as a typed error so callers can
+    // distinguish "rate limited" from "server down" — both otherwise look
+    // like generic fetch failures.
+    let used = 0;
+    let limit = 5;
+    let message = 'Free tier limit reached.';
+    try {
+      const body = await res.json();
+      used = body.used ?? 0;
+      limit = body.limit ?? 5;
+      message = body.message ?? message;
+    } catch {}
+    throw new RateLimitError(message, used, limit);
+  }
 
   if (!res.ok) {
     const body = await res.text();

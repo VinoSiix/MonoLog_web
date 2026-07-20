@@ -8,3 +8,9 @@ GROQ_API_KEY = "REDACTED_GROQ_KEY_ROTATE_NOW"
 [[kv_namespaces]]
 binding = "WAITLIST"
 id = "4dd6467700cd41c7b284ab9dc72bbbb6"
+
+# Rate-limit counters. Keys: `rl:{ip}:{YYYY-MM-DD}` → count.
+# TTL: 48 hours (auto-cleanup of stale day buckets).
+[[kv_namespaces]]
+binding = "RATELIMIT"
+id = "b2ced54310ca4f0cb52f02ab2a54e808"

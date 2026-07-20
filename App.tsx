@@ -20,7 +20,14 @@ import {
   View,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { analyzeNote, transcribeAudio } from './src/api';
+import { analyzeNote, transcribeAudio, RateLimitError } from './src/api';
+import {
+  canSortMore,
+  getRemainingToday,
+  recordSort,
+  syncFromServer,
+  FREE_TIER_DAILY_LIMIT,
+} from './src/rateLimit';
 import {
   addNotificationResponseListener,
   cancelReminder,
@@ -272,12 +279,14 @@ function WritePad({
   }, []);
 
   // ── Pulsing "Saving…" text during transcription ──────────────
+  // Slow + subtle: 1200ms cycle between 0.5 → 1.0 opacity. Previously
+  // 600ms cycle bouncing between 0.3 → 1.0 which felt anxious/strobe-y.
   useEffect(() => {
     if (processing && !listening) {
       const pulse = Animated.loop(
         Animated.sequence([
-          Animated.timing(savingOpacity, { toValue: 1, duration: 600, useNativeDriver: true }),
-          Animated.timing(savingOpacity, { toValue: 0.3, duration: 600, useNativeDriver: true }),
+          Animated.timing(savingOpacity, { toValue: 1, duration: 1200, useNativeDriver: true }),
+          Animated.timing(savingOpacity, { toValue: 0.5, duration: 1200, useNativeDriver: true }),
         ]),
       );
       pulse.start();
@@ -323,6 +332,21 @@ function WritePad({
     const text = draft.trim();
     if (!text || saving) return;
 
+    // ── Free-tier pre-flight check ──────────────────────────────
+    // Short-circuits before the network round-trip if localStorage says
+    // the user is already over quota. The worker ALSO enforces this by
+    // IP (catches users who clear storage) — see RateLimitError catch below.
+    const canSort = await canSortMore();
+    if (!canSort) {
+      const remaining = await getRemainingToday();
+      Alert.alert(
+        "That's all 5 for today",
+        `You've used all ${FREE_TIER_DAILY_LIMIT} free sorts for today. They reset at midnight — or upgrade to Pro for unlimited.`,
+        [{ text: 'OK' }],
+      );
+      return;
+    }
+
     // ── Start save animation ──────────────────────────────────
     setSaving(true);
     const saveStart = Date.now();
@@ -358,7 +382,30 @@ function WritePad({
         undefined,
         existingReminders.map((r) => ({ id: r.id, title: r.title })),
       );
-    } catch {
+      // ── Successful sort — record against today's free-tier quota. ──
+      // Do this only on success so failed requests don't burn the user's
+      // daily slots.
+      await recordSort();
+    } catch (err) {
+      // ── Rate limited (429 from worker) — don't fall back to a note. ──
+      // Sync local counter with the server's view and show a friendly
+      // upgrade prompt. The note is preserved as a draft so they can retry
+      // tomorrow or upgrade + retry immediately.
+      if (err instanceof RateLimitError) {
+        await syncFromServer(err.used);
+        // Reverse the save animation so the draft comes back.
+        setSaving(false);
+        Animated.parallel([
+          Animated.timing(draftFade, { toValue: 1, duration: 220, useNativeDriver: false }),
+          Animated.timing(savingFade, { toValue: 0, duration: 220, useNativeDriver: false }),
+        ]).start();
+        Alert.alert(
+          "That's all 5 for today",
+          `You've used all ${FREE_TIER_DAILY_LIMIT} free sorts for today. They reset at midnight — or upgrade to Pro for unlimited.`,
+          [{ text: 'OK' }],
+        );
+        return;
+      }
       // ── AI backend unavailable — fall back to a plain note ─────
       const note: Note = {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1856,8 +1903,7 @@ const styles = StyleSheet.create({
     backgroundColor: WHITE,
   },
   welcomeCtaPressed: {
-    opacity: 0.9,
-    transform: [{ translateY: -1 }],
+    opacity: 0.85,
   },
   welcomeCtaText: {
     color: BLACK,
