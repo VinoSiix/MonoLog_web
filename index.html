@@ -258,7 +258,11 @@ strong{color:#fff;font-weight:600}
 .app-pad{flex:1;padding:6px 16px 0;overflow:hidden}
 .app-write-text{font-family:var(--sans);color:#fff;font-size:15px;line-height:23px;font-weight:300;white-space:pre-wrap}
 .app-write-text .ph{color:#555}
-.app-caret{display:inline-block;width:1.5px;height:1em;background:#fff;transform:translateY(.14em);animation:blink 1.05s steps(1) infinite;vertical-align:middle}
+/* Caret — inline-block, height = 1 line, no translateY (was pushing it
+   below the baseline and looked "too low"). Blink animation actually
+   defined now (was referenced but missing before). */
+.app-caret{display:inline-block;width:1.5px;height:1.1em;background:#fff;vertical-align:text-bottom;animation:blink 1.05s steps(1) infinite}
+@keyframes blink{0%,50%{opacity:1}50.01%,100%{opacity:0}}
 /* reminders / notes list */
 .app-list{flex:1;padding:0 16px;overflow:hidden}
 .app-sec-title{font-family:var(--sans);color:#fff;font-size:10px;font-weight:400;letter-spacing:2px;text-transform:uppercase;margin:15px 0 8px}
@@ -768,7 +772,7 @@ strong{color:#fff;font-weight:600}
             <span class="app-send"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="M5 12l7-7 7 7"/></svg></span>
           </div>
           <div class="app-pad">
-            <div class="app-write-text">remind me to call mom<br>tomorrow 9am<span class="app-caret"></span></div>
+            <div class="app-write-text">remind me to text<br>sam back friday 9am<span class="app-caret"></span></div>
           </div>
           <!-- nav: calendar / create(on) / notifications -->
           <nav class="app-nav">
@@ -890,7 +894,7 @@ strong{color:#fff;font-weight:600}
       <div class="step-body">
         <h3>Saved or fired</h3>
         <p>It lands as a note you can read later, or pops up as a reminder at exactly the right moment.</p>
-        <span class="ex">saved on your device · AI runs on demand · you did nothing but write</span>
+        <span class="ex">saved on your device · AI runs on demand · you just wrote</span>
       </div>
     </li>
   </ol>
@@ -901,7 +905,7 @@ strong{color:#fff;font-weight:600}
   <p class="eyebrow" data-reveal>Features</p>
   <h2 class="title" data-reveal>Small app. <span class="dim">Sharp edges.</span></h2>
   <div class="feat-grid" data-stagger data-reveal style="margin-top:30px">
-    <div class="feat"><span class="fk">Saves offline</span><span class="fv">Notes land on your device first. AI sorting needs the internet, but everything you've already written stays readable without it.</span></div>
+    <div class="feat"><span class="fk">On your device</span><span class="fv">Notes land on your phone first. AI sorting needs the internet, but everything you've already written stays readable without it.</span></div>
     <div class="feat"><span class="fk">Daily &middot; Weekly &middot; Monthly</span><span class="fv">Set it once. It comes back on its own.</span></div>
     <div class="feat"><span class="fk">See the month</span><span class="fv">Every note and reminder lands on a clean calendar view.</span></div>
     <div class="feat"><span class="fk">Flick it gone</span><span class="fv">Done with it? Swipe. No menus, no confirms.</span></div>
