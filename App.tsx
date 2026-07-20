@@ -1715,10 +1715,12 @@ const styles = StyleSheet.create({
   // so day cells don't balloon out on wide desktop/tablet viewports.
   // aspectRatio: 1 on a 14.2857%-wide cell means cells scale with the column;
   // capping the column to ~480px keeps cells at a phone-like ~60px square.
-  // Web-only wrapper for calendar content. Width is governed by the
-  // .app-shell-wide CSS class on >= 900px viewports; on mobile it's full width.
+  // Web-only wrapper for calendar content. Capped at 460px so the grid
+  // doesn't stretch wide on desktop/tablet and push cells off-screen —
+  // without a cap the aspect-ratio:1 day cells balloon into huge squares.
   calWebWrap: {
     width: '100%',
+    maxWidth: 460,
     alignSelf: 'center',
   },
 
@@ -1727,7 +1729,7 @@ const styles = StyleSheet.create({
   // itself doesn't scroll (it's a month view), but capping the block height
   // pushes the dropdowns into view without an overwhelming wall of cells.
   calBlockWeb: {
-    maxHeight: 420,
+    maxHeight: 630,
     overflow: 'hidden',
   },
 
