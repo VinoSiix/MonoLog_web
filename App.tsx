@@ -1508,17 +1508,22 @@ function MonthView({
 // ─── App ────────────────────────────────────────────────────────
 
 export default function App() {
+  // tab lives here so the shell can adapt its width based on which tab is active.
+  // Calendar tab uses a wider shell on desktop (side-by-side layout); other tabs
+  // stay narrow (phone-shaped).
+  const [tab, setTab] = useState<'write' | 'reminders' | 'calendar'>('write');
+  const shellClassName = `app-shell${IS_WEB && tab === 'calendar' ? ' app-shell-wide' : ''}`;
+
   return (
     <View style={styles.outerShell}>
-      <View style={styles.appShell} className="app-shell">
-        <AppInner />
+      <View style={styles.appShell} className={shellClassName}>
+        <AppInner tab={tab} setTab={setTab} />
       </View>
     </View>
   );
 }
 
-function AppInner() {
-  const [tab, setTab] = useState<'write' | 'reminders' | 'calendar'>('write');
+function AppInner({ tab, setTab }: { tab: 'write' | 'reminders' | 'calendar'; setTab: (t: 'write' | 'reminders' | 'calendar') => void }) {
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -1567,7 +1572,7 @@ function AppInner() {
       loadReminders();
     });
     return () => sub.remove();
-  }, [loadReminders]);
+  }, [loadReminders, setTab]);
 
   const deleteReminder = useCallback(
     async (id: string) => {
@@ -1714,9 +1719,11 @@ const styles = StyleSheet.create({
   // so day cells don't balloon out on wide desktop/tablet viewports.
   // aspectRatio: 1 on a 14.2857%-wide cell means cells scale with the column;
   // capping the column to ~480px keeps cells at a phone-like ~60px square.
+  // Web-only wrapper for calendar content. Width is governed by the
+  // .app-shell-wide CSS class on >= 900px viewports; on mobile it's full width.
+  // No maxWidth here — the shell handles it.
   calWebWrap: {
     width: '100%',
-    maxWidth: 480,
     alignSelf: 'center',
   },
 

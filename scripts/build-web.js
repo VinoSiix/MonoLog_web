@@ -115,6 +115,10 @@ textarea { resize: none; }
 //   < 600px (phones):                full width
 //   600-899px (large phone / tablet): 480px max, centered
 //   >= 900px (laptop / desktop):      520px max, centered
+//
+// .app-shell-wide: applied ONLY when the calendar tab is active on web.
+// On >= 900px it expands to 760px so the calendar + day-detail can sit
+// side-by-side. Below 900px it inherits the normal shell widths.
 const responsiveShellCss = `
 .app-shell {
   max-width: 100% !important;
@@ -122,9 +126,35 @@ const responsiveShellCss = `
 }
 @media (min-width: 600px) {
   .app-shell { max-width: 480px !important; }
+  .app-shell-wide { max-width: 480px !important; }
 }
 @media (min-width: 900px) {
   .app-shell { max-width: 520px !important; }
+  .app-shell-wide { max-width: 760px !important; }
+}
+
+/* Calendar split layout.
+   Mobile (default): stack — grid on top, day detail below.
+   Desktop (>= 900px): side-by-side — grid on left, detail on right.
+   Below 900px the children just stack normally (display:block / flex column). */
+.cal-split {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.cal-grid-side { flex: 0 0 auto; }
+.cal-detail-side { flex: 1; min-width: 0; }
+
+@media (min-width: 900px) {
+  .cal-split {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 24px;
+  }
+  /* Calendar grid takes a fixed ~340px column (7 cells × ~46px + padding)
+     so day cells stay phone-sized. Detail fills the rest. */
+  .cal-grid-side { flex: 0 0 340px; }
+  .cal-detail-side { flex: 1; min-width: 0; }
 }
 `;
 
