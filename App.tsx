@@ -1579,8 +1579,10 @@ export default function App() {
           pointerEvents="auto"
         >
           <View style={styles.welcomeInner}>
+            <Text style={styles.welcomeEyebrow}>WELCOME TO</Text>
             <Text style={styles.welcomeTitle}>
-              Welcome to{'\n'}Monolog
+              Mono
+              <Text style={styles.welcomeTitleStroke}>log</Text>
             </Text>
             <Pressable
               onPress={dismissWelcome}
@@ -1809,17 +1811,40 @@ const styles = StyleSheet.create({
     width: '100%',
     alignItems: 'center',
   },
-  // Title — monospace, big, centered. Matches the landing page's design
-  // language without copying the hero wordmark exactly (this is a welcome
-  // message, not a logo reveal).
+  // Small uppercase label above the wordmark. Matches the landing page's
+  // eyebrow style — tiny tracked monospace.
+  welcomeEyebrow: {
+    color: '#8a8a8a',
+    fontFamily: MONO,
+    fontSize: 12,
+    letterSpacing: 3,
+    textTransform: 'uppercase',
+    fontWeight: '400',
+    marginBottom: 18,
+  },
+  // Wordmark — matches the landing page hero h1 exactly:
+  //   font-family: var(--mono)
+  //   font-weight: 600
+  //   font-size: clamp(2.6rem, 11vw, 9.5rem) → ~60-72px on a phone shell
+  //   line-height: 0.9
+  //   letter-spacing: -0.045em
+  // "Mono" solid white, "log" stroked outline on web (color: transparent +
+  // -webkit-text-stroke: 1.5px white). On native, RN doesn't support
+  // text-stroke cleanly so we fall back to solid white for the whole word.
   welcomeTitle: {
     color: WHITE,
     fontFamily: MONO,
-    fontWeight: '700',
-    fontSize: 40,
-    lineHeight: 50,
-    letterSpacing: -1.5,
+    fontWeight: '600',
+    fontSize: 68,
+    lineHeight: 61, // 0.9 × 68
+    letterSpacing: -3,
     textAlign: 'center',
+  },
+  welcomeTitleStroke: {
+    color: 'transparent',
+    ...(Platform.OS === 'web'
+      ? { WebkitTextStroke: '1.5px #ffffff' as any }
+      : { color: WHITE }),
   },
   // CTA button — pill, white background, black text, monospace uppercase.
   // Matches .btn .btn-primary on the landing page.
