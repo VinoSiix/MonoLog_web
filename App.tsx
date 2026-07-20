@@ -855,16 +855,18 @@ function WritePad({
 
   // ── Finish saving animation ─────────────────────────────────
   const finishSaving = async (startTime: number) => {
-    // Show "Saving.." for at least 1s total
+    // Show "Saving.." for at least 2s total — gives the user time to
+    // actually register that the save happened. 1s felt rushed.
     const elapsed = Date.now() - startTime;
-    if (elapsed < 1000) {
-      await new Promise((r) => setTimeout(r, 1000 - elapsed));
+    if (elapsed < 2000) {
+      await new Promise((r) => setTimeout(r, 2000 - elapsed));
     }
-    // Saving text fades out
+    // Saving text fades out (slow enough to read as a graceful exit,
+    // not a flicker).
     await new Promise<void>((resolve) => {
       Animated.timing(savingFade, {
         toValue: 0,
-        duration: 180,
+        duration: 400,
         easing: Easing.in(Easing.cubic),
         useNativeDriver: false,
       }).start(resolve);
@@ -874,7 +876,7 @@ function WritePad({
     setSaving(false);
     Animated.timing(draftFade, {
       toValue: 1,
-      duration: 300,
+      duration: 350,
       easing: Easing.out(Easing.back(1.2)),
       useNativeDriver: false,
     }).start();
