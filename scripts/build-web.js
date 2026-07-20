@@ -10,8 +10,13 @@
  *       ├── _expo/         ← JS bundle + assets
  *       └── ...
  *
- * Why a script? Expo's HTML uses absolute paths like `/_expo/static/...` which
- * break when the app is served at `/app/`. We rewrite them to relative paths.
+ * Why a script?
+ * 1. Expo's HTML uses absolute paths like /_expo/static/... which break when
+ *    the app is served at /app/. We rewrite them to relative paths.
+ * 2. @expo/vector-icons renders icons as text with fontFamily="Ionicons" etc.
+ *    On web, the browser needs @font-face declarations to resolve those family
+ *    names — react-native-web doesn't inject them automatically in production
+ *    builds. We scan the bundled .ttf files and emit @font-face rules.
  */
 const { spawnSync } = require('child_process');
 const fs = require('fs');
@@ -43,9 +48,6 @@ log('Exporting Expo web build to dist/app/');
 run('npx', ['expo', 'export', '--platform', 'web', '--output-dir', 'dist/app']);
 
 // ── Step 3: Rewrite absolute asset paths in the app's index.html ──
-// Expo outputs:  <script src="/_expo/static/js/...">
-// We need:       <script src="./_expo/static/js/...">
-// so the bundle resolves correctly when served at /app/.
 const appHtmlPath = path.join(APP_OUT, 'index.html');
 if (!fs.existsSync(appHtmlPath)) {
   console.error(`\x1b[31mExpected ${appHtmlPath} but it doesn't exist\x1b[0m`);
@@ -59,6 +61,60 @@ appHtml = appHtml
   .replace(/href="\/_expo\//g, 'href="./_expo/')
   .replace(/href="\/favicon\//g, 'href="./favicon/')
   .replace(/href="\/favicon\.ico"/g, 'href="./favicon.ico"');
+
+// ── Step 3b: Inject @font-face rules for every bundled .ttf icon font ──
+// The fonts end up at: app/assets/node_modules/@expo/vector-icons/.../Fonts/NAME.HASH.ttf
+// Filename convention: <FontFamily>.<hash>.ttf (no other dots in the family name
+// for vector-icons fonts — FontAwesome5_Brands etc. are an exception).
+const FONTS_DIR = path.join(
+  APP_OUT,
+  'assets',
+  'node_modules',
+  '@expo',
+  'vector-icons',
+  'build',
+  'vendor',
+  'react-native-vector-icons',
+  'Fonts',
+);
+
+let fontFaceCss = '';
+if (fs.existsSync(FONTS_DIR)) {
+  const ttfs = fs.readdirSync(FONTS_DIR).filter((f) => f.endsWith('.ttf'));
+  // Map: family name (normalized) → relative URL
+  // Examples we recognize:
+  //   Ionicons.HASH.ttf             → "Ionicons"
+  //   MaterialCommunityIcons.HASH   → "MaterialCommunityIcons"
+  //   FontAwesome5_Brands.HASH      → "FontAwesome5_Brands"
+  //   FontAwesome5_Regular.HASH     → "FontAwesome5_Regular"
+  // The hash is the first segment after the family name, separated by "."
+  const familyMap = new Map();
+  for (const file of ttfs) {
+    // Strip ".ttf", then split on "." — first segment is the family name.
+    const base = file.replace(/\.ttf$/, '');
+    const dotIdx = base.lastIndexOf('.');
+    // Find the first segment that looks like a 32-hex-char hash.
+    // Safer: split on first ".hash" — but family names can contain underscores,
+    // not dots. So split on the first "." that begins a hex string.
+    const match = base.match(/^([^.]+)\.([a-f0-9]{16,})$/i);
+    if (!match) continue;
+    const family = match[1];
+    const relPath = `./assets/node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/${file}`;
+    familyMap.set(family, relPath);
+  }
+
+  for (const [family, url] of familyMap) {
+    fontFaceCss += `@font-face{font-family:"${family}";src:url("${url}") format("truetype");}\n`;
+  }
+  log(`Injected ${familyMap.size} @font-face rules for icon fonts`);
+}
+
+if (fontFaceCss) {
+  // Inject into <head> right before </head>.
+  const injectTag = `<style id="icon-fonts">\n${fontFaceCss}</style>`;
+  appHtml = appHtml.replace('</head>', `${injectTag}\n</head>`);
+}
+
 fs.writeFileSync(appHtmlPath, appHtml);
 
 // ── Step 4: Copy landing page to dist/index.html ────────────────

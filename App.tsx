@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
-import * as Font from 'expo-font';
 import {
   ActivityIndicator,
   Alert,
@@ -589,8 +588,14 @@ function WritePad({
     outputRange: [16, 0],
   });
 
+  // On native, wrap in TouchableWithoutFeedback so tapping outside the input
+  // dismisses the keyboard. On web this wrapper intercepts clicks and makes
+  // focusing the input require a long-press — so we skip it entirely.
+  const RootWrapper = IS_WEB ? View : TouchableWithoutFeedback;
+  const rootWrapperProps = IS_WEB ? { style: { flex: 1 } } : { onPress: Keyboard.dismiss };
+
   return (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+    <RootWrapper {...rootWrapperProps}>
       <View style={{ flex: 1 }}>
         {/* Header */}
       <View style={[styles.header, { paddingTop: 54 }]}>
@@ -700,7 +705,7 @@ function WritePad({
           </View>
         )}
       </View>
-    </TouchableWithoutFeedback>
+    </RootWrapper>
   );
 }
 
@@ -1264,6 +1269,12 @@ function MonthView({
     return items;
   })();
 
+  // Notes that belong to the selected calendar day.
+  // Uses the same localDateStr helper as the grid (YYYY-MM-DD).
+  const notesForSelectedDay = selected
+    ? notes.filter((n) => localDateStr(new Date(n.createdAt)) === selected)
+    : [];
+
   return (
     <View style={{ flex: 1 }}>
       <View style={styles.header}>
@@ -1360,20 +1371,20 @@ function MonthView({
         )}
 
         {/* Empty day — only if nothing at all */}
-        {(!selectedEvents || selectedEvents.length === 0) && notes.length === 0 && (
+        {(!selectedEvents || selectedEvents.length === 0) && notesForSelectedDay.length === 0 && (
           <View style={styles.calEmptyWrap}>
             <Text style={styles.calEmpty}>nothing this day</Text>
           </View>
         )}
 
-        {/* All notes — collapsible */}
-        {notes.length > 0 && (
+        {/* Notes for the selected day — collapsible */}
+        {notesForSelectedDay.length > 0 && (
           <View style={[styles.section, { paddingHorizontal: 22 }]}>
             <Pressable
               onPress={() => { LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut); setCalNotesOpen(!calNotesOpen); }}
               style={styles.dropdownToggle}
             >
-              <Text style={styles.sectionLabel}>notes · {notes.length}</Text>
+              <Text style={styles.sectionLabel}>notes · {notesForSelectedDay.length}</Text>
               <Ionicons
                 name={calNotesOpen ? 'chevron-up' : 'chevron-down'}
                 size={14}
@@ -1382,7 +1393,7 @@ function MonthView({
             </Pressable>
             {calNotesOpen && (
               <View>
-                {notes.map((n) => (
+                {notesForSelectedDay.map((n) => (
                   <Swipeable
                     key={n.id}
                     overshootRight={false}
@@ -1434,30 +1445,6 @@ function MonthView({
 // ─── App ────────────────────────────────────────────────────────
 
 export default function App() {
-  // Preload Ionicons font so icons render on web (production builds
-  // don't always wire the @expo/vector-icons font through automatically).
-  const [fontsReady, setFontsReady] = useState(false);
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        await Font.loadAsync({
-          Ionicons: require('@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf'),
-        });
-      } catch {}
-      if (mounted) setFontsReady(true);
-    })();
-    return () => { mounted = false; };
-  }, []);
-
-  if (!fontsReady) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator color={WHITE} size="small" />
-      </View>
-    );
-  }
-
   return (
     <View style={styles.outerShell}>
       <View style={styles.appShell}>
@@ -1690,7 +1677,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     lineHeight: 34,
     fontWeight: '300',
-    minHeight: 140,
+    minHeight: 260,
     textAlignVertical: 'top',
     padding: 0,
   },
