@@ -1551,6 +1551,32 @@ function AppInner() {
       <View style={styles.container}>
       <StatusBar style="light" />
 
+      {/* Top bar — back to website (web only) + App Store button (web only).
+          Native (iOS/Android) has no "back to website" concept and showing
+          "Download on App Store" inside the iOS app is redundant. */}
+      {IS_WEB && (
+        <View style={styles.topBar}>
+          <Pressable
+            onPress={() => { try { window.location.href = '/'; } catch {} }}
+            style={styles.topBarBtn}
+            hitSlop={10}
+          >
+            <Ionicons name="chevron-back" size={15} color={DIM} />
+            <Text style={styles.topBarText}>website</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              // Replace with real App Store URL once listed.
+              try { window.open('https://mono-log-web.vercel.app/', '_blank'); } catch {}
+            }}
+            style={styles.appStoreBtn}
+          >
+            <Ionicons name="logo-apple" size={13} color={BLACK} />
+            <Text style={styles.appStoreText}>App Store</Text>
+          </Pressable>
+        </View>
+      )}
+
       <Animated.View
         style={[
           { flex: 1, opacity: fadeAnim, transform: [{ translateY: fadeAnim.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) }] },
@@ -1635,13 +1661,56 @@ const styles = StyleSheet.create({
     backgroundColor: BLACK,
     ...(Platform.OS === 'web'
       ? {
-          // On wide screens, add subtle border + shadow so it reads as a device.
-          boxShadow: '0 0 80px rgba(0,0,0,0.6)',
+          // Faint side borders + a soft drop shadow so the centered column
+          // reads as a contained surface against the dark backdrop instead
+          // of "floating empty space" on large screens.
+          borderLeftWidth: 1,
+          borderRightWidth: 1,
+          borderColor: '#161616',
+          boxShadow: '0 0 60px rgba(0,0,0,0.5)',
           minHeight: '100vh',
         }
       : {}),
   },
   container: { flex: 1, backgroundColor: BLACK },
+
+  // Top bar (web only) — thin row above the tab content.
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 6,
+    borderBottomWidth: 0,
+  },
+  topBarBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+  },
+  topBarText: {
+    color: DIM,
+    fontSize: 12,
+    letterSpacing: 0.4,
+  },
+  appStoreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: WHITE,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+    borderRadius: 14,
+  },
+  appStoreText: {
+    color: BLACK,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
 
   // Header
   header: {
