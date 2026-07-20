@@ -176,6 +176,46 @@ async function handleRequest(
       return handleAdmin(request, env, corsHeaders);
     }
 
+    // ── Route: /reset (self-service rate-limit reset) ───────────
+    // Clears the caller's daily AI-sort counter so they can get 5 more
+    // free sorts. Triggered by typing "reset1010" in the app, which also
+    // wipes local storage + shows the welcome screen.
+    //
+    // Why we allow this: Groq's free tier is the real ceiling (30 RPM
+    // shared globally). The per-IP daily counter is just UX polish. If
+    // someone wants to spam /reset to get unlimited sorts, they still
+    // hit Groq's RPM ceiling fast — and they're a single user, not
+    // scalable abuse.
+    //
+    // Code-gated ({code: 'reset1010'}) so random POSTs don't trigger it.
+    // The code is also in the client bundle, so this isn't real security
+    // — it just prevents accidental resets from random traffic.
+    if (url.pathname === '/reset') {
+      let body: { code?: string };
+      try {
+        body = await request.json();
+      } catch {
+        return new Response(JSON.stringify({ error: 'invalid JSON' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+      if (body.code !== 'reset1010') {
+        // Return the same shape as a successful reset so the endpoint
+        // doesn't leak whether the code was wrong (mild obfuscation).
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders },
+        });
+      }
+      const resetIp = getClientIp(request);
+      const resetTodayKey = new Date().toISOString().slice(0, 10);
+      const resetRlKey = `rl:${resetIp}:${resetTodayKey}`;
+      await env.RATELIMIT.delete(resetRlKey);
+      return new Response(JSON.stringify({ ok: true }), {
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
+
     // ── Route: /waitlist ─────────────────────────────────────────
     // Accepts { email } → stores in KV keyed by normalized email.
     // Idempotent: re-submitting the same email returns ok without duplicating.

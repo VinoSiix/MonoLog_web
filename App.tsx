@@ -113,6 +113,10 @@ function openWaitlist(): void {
 // the landing page aesthetic: pure black card, monospace, white pill
 // primary button, ghost secondary. Mirrors index.html's .btn-primary /
 // .btn-ghost / .wl-btn visual language.
+//
+// Uses a mount-driven Animated.Value so it fades in over 200ms when
+// `visible` flips true. The backdrop is solid black (not translucent) so
+// app text behind it can't bleed through and look "layered".
 function PaywallModal({
   visible,
   limit,
@@ -124,11 +128,32 @@ function PaywallModal({
   onClose: () => void;
   onJoinWaitlist: () => void;
 }) {
+  // Fade-in animation. We reset to 0 whenever we mount (i.e. when visible
+  // flips true), then animate to 1. Using Animated.timing with a short
+  // duration keeps the modal from popping in abruptly.
+  const fade = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (visible) {
+      fade.setValue(0);
+      Animated.timing(fade, {
+        toValue: 1,
+        duration: 200,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [visible, fade]);
+
   // Render nothing when invisible — avoids maintaining an off-screen layer.
   if (!visible) return null;
 
   return (
-    <View style={paywallStyles.overlay}>
+    <Animated.View
+      style={[paywallStyles.overlay, { opacity: fade }]}
+      pointerEvents="auto"
+    >
+      {/* Solid black backdrop — opaque so no app text bleeds through.
+          Pressable so tapping outside the card closes the modal. */}
       <Pressable style={paywallStyles.backdrop} onPress={onClose} />
       <View style={paywallStyles.card}>
         <Text style={paywallStyles.eyebrow}>FREE TIER · {limit}/DAY</Text>
@@ -147,7 +172,7 @@ function PaywallModal({
           </Pressable>
         </View>
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
@@ -155,17 +180,18 @@ const paywallStyles = StyleSheet.create({
   overlay: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
-    zIndex: 100,
+    zIndex: 1000,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 28,
   },
-  // Dim the app behind the modal. Separate Pressable so taps on the
-  // backdrop close the modal but taps on the card don't bubble up.
+  // Solid black backdrop (fully opaque). The previous 0.78 opacity let the
+  // app's white text bleed through, making the modal look "layered" with
+  // the app underneath. Solid black = clean separation.
   backdrop: {
     position: 'absolute',
     top: 0, left: 0, right: 0, bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.78)',
+    backgroundColor: BLACK,
   },
   card: {
     width: '100%',
@@ -175,6 +201,8 @@ const paywallStyles = StyleSheet.create({
     borderColor: '#1f1f1f',
     borderRadius: 14,
     padding: 28,
+    // Explicit elevation for Android so the card floats above the backdrop.
+    elevation: 8,
   },
   eyebrow: {
     fontFamily: MONO,
@@ -505,6 +533,47 @@ function WritePad({
   const send = async () => {
     const text = draft.trim();
     if (!text || saving) return;
+
+    // ── Hidden reset code: "reset1010" ──────────────────────────
+    // Wipes notes, reminders, and the rate-limit counter, then re-shows
+    // the welcome screen. Useful for testing the onboarding flow without
+    // waiting for the daily counter to roll over or manually clearing
+    // storage in devtools. The text is intentionally obscure so real
+    // users don't trigger it by accident.
+    //
+    // Both local (AsyncStorage) AND server (KV) counters are cleared —
+    // otherwise the worker would still 429 us even after the wipe.
+    if (text === 'reset1010') {
+      setDraft('');
+      try {
+        await Promise.all([
+          AsyncStorage.removeItem(NOTES_KEY),
+          AsyncStorage.removeItem(REMINDERS_KEY),
+          AsyncStorage.removeItem(WELCOME_KEY),
+          AsyncStorage.removeItem('monolog.ratelimit.v1'),
+        ]);
+      } catch {}
+      // Hit the worker /reset endpoint so the server-side per-IP counter
+      // is also cleared. Fire-and-forget — if it fails, the local wipe
+      // still gives us a fresh-feeling app, just the next /analyze might
+      // 429 (which is recoverable by trying again later).
+      try {
+        await fetch('https://minnotes-worker.timppamsix.workers.dev/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: 'reset1010' }),
+        });
+      } catch {}
+      // Hard reload — cleanest way to re-mount everything (welcome
+      // screen, empty lists, fresh state). On web this is a full page
+      // reload. On native we can't easily reload from JS, so we just
+      // leave the now-empty state in place (lists will re-render empty,
+      // welcome screen will show on next app open).
+      if (IS_WEB) {
+        window.location.reload();
+      }
+      return;
+    }
 
     // ── Free-tier pre-flight check ──────────────────────────────
     // Short-circuits before the network round-trip if localStorage says
@@ -1207,16 +1276,14 @@ function RemindersPad({
                   ) : (
                     <SwipeToDelete onDelete={() => delNote(n)} deleting={deleting === n.id}>
                       {(hovered) => (
-                        <Pressable onPress={() => startNoteEdit(n)} style={styles.noteItem}>
-                          <Text style={styles.noteRaw} numberOfLines={1}>
+                        <Pressable onPress={() => startNoteEdit(n)} style={[styles.noteItem, hovered && { paddingRight: 44 }]}>
+                          <Text style={[styles.noteRaw, { flex: 1 }]} numberOfLines={1}>
                             {n.raw}
                           </Text>
-                          {/* Hide date when delete button is visible so they
-                              don't overlap. Native always shows date
-                              (hovered is always false there). */}
-                          {!hovered && (
-                            <Text style={styles.noteDate}>{formatNoteDate(n.createdAt)}</Text>
-                          )}
+                          {/* Keep date visible on hover — just shift the row
+                              left via paddingRight above so the trash button
+                              gets its own 44px lane without overlapping. */}
+                          <Text style={styles.noteDate}>{formatNoteDate(n.createdAt)}</Text>
                         </Pressable>
                       )}
                     </SwipeToDelete>
@@ -1698,15 +1765,13 @@ function MonthView({
                         deleting={deleting === n.id}
                       >
                         {(hovered) => (
-                          <View style={styles.noteItem}>
-                            <Text style={styles.noteRaw} numberOfLines={1}>
+                          <View style={[styles.noteItem, hovered && { paddingRight: 44 }]}>
+                            <Text style={[styles.noteRaw, { flex: 1 }]} numberOfLines={1}>
                               {n.raw}
                             </Text>
-                            {!hovered && (
-                              <Text style={styles.noteDate}>
-                                {safeDate(n.createdAt)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? '—'}
-                              </Text>
-                            )}
+                            <Text style={styles.noteDate}>
+                              {safeDate(n.createdAt)?.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) ?? '—'}
+                            </Text>
                           </View>
                         )}
                       </SwipeToDelete>
