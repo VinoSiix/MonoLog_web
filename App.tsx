@@ -1326,10 +1326,10 @@ function MonthView({
         {/* On web, cap the calendar content width so cells don't balloon on
             wide desktop/tablet viewports. On native, full width is correct. */}
         <View style={IS_WEB ? styles.calWebWrap : undefined}>
-        {/* cal-split: stack on mobile, side-by-side on desktop (via CSS class). */}
-        <View className="cal-split">
-          {/* ── LEFT SIDE: month nav + day headers + grid ── */}
-          <View className="cal-grid-side">
+          {/* Calendar block — month nav + day headers + grid.
+              Capped at a fixed height so the grid doesn't dominate on desktop.
+              The grid scrolls within this height if needed. */}
+          <View style={IS_WEB ? styles.calBlockWeb : undefined}>
           {/* Month nav */}
           <View style={styles.monthNav}>
             <Pressable onPress={prevMonth} hitSlop={10}>
@@ -1384,14 +1384,12 @@ function MonthView({
           </Animated.View>
           </View>
 
-          {/* ── RIGHT SIDE: selected day detail (reminders + notes) ── */}
-          <View className="cal-detail-side">
-            {/* Day label heading — only show when a day is selected */}
-            {selected && dayLabel && (
-              <Text style={styles.calDayHeading}>{dayLabel}</Text>
-            )}
+          {/* Day label heading — only show when a day is selected */}
+          {selected && dayLabel && (
+            <Text style={styles.calDayHeading}>{dayLabel}</Text>
+          )}
 
-            {/* Reminders for selected day — dropdown, open by default */}
+          {/* Reminders for selected day — dropdown, open by default */}
             {selectedEvents && selectedEvents.length > 0 && (
               <View style={[styles.section, { paddingHorizontal: 22 }]}>
                 <Pressable
@@ -1498,8 +1496,6 @@ function MonthView({
               </View>
             )}
           </View>
-        </View>
-        </View>
       </ScrollView>
     </View>
   );
@@ -1721,10 +1717,18 @@ const styles = StyleSheet.create({
   // capping the column to ~480px keeps cells at a phone-like ~60px square.
   // Web-only wrapper for calendar content. Width is governed by the
   // .app-shell-wide CSS class on >= 900px viewports; on mobile it's full width.
-  // No maxWidth here — the shell handles it.
   calWebWrap: {
     width: '100%',
     alignSelf: 'center',
+  },
+
+  // Web-only wrapper for the calendar grid block (month nav + day headers +
+  // grid). Caps the height so the grid doesn't dominate on desktop. The grid
+  // itself doesn't scroll (it's a month view), but capping the block height
+  // pushes the dropdowns into view without an overwhelming wall of cells.
+  calBlockWeb: {
+    maxHeight: 420,
+    overflow: 'hidden',
   },
 
   // Heading for the selected day on the right side of the split view.

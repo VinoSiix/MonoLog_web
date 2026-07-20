@@ -115,11 +115,6 @@ textarea { resize: none; }
 //   < 600px (phones):                full width
 //   600-899px (large phone / tablet): 480px max, centered
 //   >= 900px (laptop / desktop):      520px max, centered
-//
-// .app-shell-wide: applied ONLY when the calendar tab is active on web.
-// On >= 900px it expands much wider (1100px) so the calendar (left half)
-// and the day detail (right half) both get real room. Below 900px it
-// inherits the normal shell widths and the split stacks vertically.
 const responsiveShellCss = `
 .app-shell {
   max-width: 100% !important;
@@ -127,43 +122,9 @@ const responsiveShellCss = `
 }
 @media (min-width: 600px) {
   .app-shell { max-width: 480px !important; }
-  .app-shell-wide { max-width: 480px !important; }
 }
 @media (min-width: 900px) {
   .app-shell { max-width: 520px !important; }
-  .app-shell-wide { max-width: 1100px !important; }
-}
-
-/* Calendar split layout.
-   Mobile (default): stack — grid on top, day detail below.
-   Desktop (>= 900px): TRUE 50/50 split — calendar on LEFT HALF,
-   reminders+notes dropdowns on RIGHT HALF. */
-.cal-split {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-}
-.cal-grid-side { flex: 0 0 auto; }
-.cal-detail-side { flex: 1; min-width: 0; }
-
-@media (min-width: 900px) {
-  .cal-split {
-    flex-direction: row;
-    align-items: stretch;
-    gap: 32px;
-    min-height: 540px;
-  }
-  /* EXACTLY 50/50 — both sides get half the shell width. */
-  .cal-grid-side {
-    flex: 1 1 0;
-    width: 50%;
-    min-width: 0;
-  }
-  .cal-detail-side {
-    flex: 1 1 0;
-    width: 50%;
-    min-width: 0;
-  }
 }
 `;
 
