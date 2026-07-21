@@ -57,10 +57,10 @@ if (!fs.existsSync(appHtmlPath)) {
 log('Rewriting asset paths in dist/app/index.html');
 let appHtml = fs.readFileSync(appHtmlPath, 'utf8');
 appHtml = appHtml
-  .replace(/src="\/_expo\//g, 'src="./_expo/')
-  .replace(/href="\/_expo\//g, 'href="./_expo/')
-  .replace(/href="\/favicon\//g, 'href="./favicon/')
-  .replace(/href="\/favicon\.ico"/g, 'href="./favicon.ico"');
+  .replace(/src="\/_expo\//g, 'src="/app/_expo/')
+  .replace(/href="\/_expo\//g, 'href="/app/_expo/')
+  .replace(/href="\/favicon\//g, 'href="/app/favicon/')
+  .replace(/href="\/favicon\.ico"/g, 'href="/app/favicon.ico"');
 
 // ── Step 3b: Inject CSS — @font-face for icon fonts + web input reset ──
 // Two concerns:
@@ -157,6 +157,29 @@ if (fontFaceCss || inputResetCss || responsiveShellCss) {
 }
 
 fs.writeFileSync(appHtmlPath, appHtml);
+
+// ── Step 3b (add): Rewrite /_expo/ paths inside JS bundles ─────
+// Defensive: even though Monolog is a single App.tsx (no route-based
+// code splitting today), if a future dependency starts using async
+// chunks the paths would 404 at /app/. Cheap to apply unconditionally.
+log('Rewriting /_expo/ paths inside JS bundles');
+const jsDir = path.join(APP_OUT, '_expo', 'static', 'js');
+if (fs.existsSync(jsDir)) {
+  for (const sub of fs.readdirSync(jsDir, { withFileTypes: true })) {
+    if (!sub.isDirectory()) continue;
+    const subDir = path.join(jsDir, sub.name);
+    for (const file of fs.readdirSync(subDir)) {
+      if (!file.endsWith('.js')) continue;
+      const p = path.join(subDir, file);
+      let src = fs.readFileSync(p, 'utf8');
+      const before = (src.match(/"\/_expo\//g) || []).length;
+      if (before === 0) continue;
+      src = src.replace(/"\/_expo\//g, '"/app/_expo/');
+      fs.writeFileSync(p, src);
+      log(`  ${sub.name}/${file}: ${before} path(s) rewritten`);
+    }
+  }
+}
 
 // ── Step 4: Copy landing page to dist/index.html ────────────────
 log('Copying landing page (index.html) to dist/index.html');
