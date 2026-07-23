@@ -44,3 +44,10 @@ yarn-error.*
 
 # Cloudflare Wrangler local state
 worker/.wrangler/
+
+# Local AI / editor tool config (Claude Code, etc.) — not project config
+.claude/
+
+# Windows
+Thumbs.db
+ehthumbs.db
