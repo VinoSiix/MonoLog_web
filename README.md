@@ -42,7 +42,7 @@ Landing page: <https://mono-log-web.vercel.app/>
 | Layer | Tech |
 |---|---|
 | Framework | Expo SDK 56, React Native, React 19 |
-| Navigation | expo-router (file-based, typed routes) |
+| Navigation | Manual tab state (write / reminders / calendar) |
 | State / storage | AsyncStorage (local-first) |
 | AI | Groq inference API (LLaMA models) |
 | Backend | Cloudflare Worker (waitlist + AI proxy) |

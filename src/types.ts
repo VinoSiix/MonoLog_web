@@ -15,7 +15,7 @@ export interface AnalyzeResponse {
     /** ISO 8601 datetime string. */
     datetime: string;
     /** Recurrence pattern. */
-    recurring: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+    recurring: 'none' | 'daily' | 'weekly' | 'monthly';
     /** Specific days of the week (0=Sun … 6=Sat) for multi-day weekly patterns. */
     daysOfWeek?: number[];
     /** Send reminder this many minutes before the event (0 = at event time). */
@@ -27,7 +27,7 @@ export interface AnalyzeResponse {
   modify?: {
     title?: string;
     datetime?: string;
-    recurring?: 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+    recurring?: 'none' | 'daily' | 'weekly' | 'monthly';
     daysOfWeek?: number[];
     remindBeforeMinutes?: number;
   };

@@ -109,6 +109,32 @@ async function bumpDailyCounter(env: Env, ip: string, current: number): Promise<
   }
 }
 
+/**
+ * Refund one slot from the per-IP daily counter. Used when the Groq
+ * call failed on our side (5xx, rate-limit, empty response) so the
+ * user isn't penalized for infrastructure problems. Clamps at 0.
+ */
+async function refundDailyCounter(env: Env, ip: string): Promise<void> {
+  try {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const rlKey = `rl:${ip}:${todayKey}`;
+    const raw = await env.RATELIMIT.get(rlKey);
+    const c = Math.max(0, (parseInt(raw ?? '0', 10)) - 1);
+    await env.RATELIMIT.put(rlKey, String(c));
+  } catch {
+    // Refund failure shouldn't crash the response path.
+  }
+}
+
+/**
+ * Short hex digest for log fingerprinting without leaking raw content.
+ * Used when logging malformed LLM output that may contain user PII.
+ */
+async function sha256Short(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest)).slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const origin = request.headers.get('Origin');
@@ -276,23 +302,25 @@ async function handleRequest(
         await env.RATELIMIT.put(wlHourKey, String(wlNext));
       }
 
-      // Check if already on the list.
+      // Check if already on the list. Return the SAME response shape
+      // whether the email is new or existing — otherwise this endpoint
+      // becomes an email-membership oracle (anyone can probe whether a
+      // specific address is signed up). The landing page doesn't need
+      // the `already` flag; it shows a generic success either way.
       const existing = await env.WAITLIST.get(`email:${normalized}`);
-      if (existing) {
-        return new Response(JSON.stringify({ ok: true, already: true }), {
-          headers: { 'Content-Type': 'application/json', ...corsHeaders },
-        });
+      if (!existing) {
+        // Privacy minimization: store only email + timestamp. We
+        // previously stored UA + referrer too, but those weren't
+        // used for anything and broaden the PII surface if KV ever
+        // leaks. Easy to re-add later if analytics justify it.
+        await env.WAITLIST.put(
+          `email:${normalized}`,
+          JSON.stringify({
+            email: normalized,
+            at: new Date().toISOString(),
+          }),
+        );
       }
-
-      await env.WAITLIST.put(
-        `email:${normalized}`,
-        JSON.stringify({
-          email: normalized,
-          at: new Date().toISOString(),
-          ua: request.headers.get('user-agent') ?? '',
-          ref: request.headers.get('referer') ?? '',
-        }),
-      );
 
       return new Response(JSON.stringify({ ok: true }), {
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
@@ -387,6 +415,10 @@ async function handleRequest(
         });
       }
 
+      // Reserve the shared daily slot BEFORE the expensive Groq call
+      // (same pattern as /analyze — refund on infra-side failure).
+      await bumpDailyCounter(env, tIp, tCurrent);
+
       const groqForm = new FormData();
       groqForm.append('model', 'whisper-large-v3');
       groqForm.append('file', file);
@@ -400,7 +432,9 @@ async function handleRequest(
       if (!groqRes.ok) {
         // Whisper also rate-limits on the shared Groq quota — surface as
         // ai_busy so the client can retry gracefully instead of looking
-        // broken. Don't leak Groq's error body (could contain internals).
+        // broken. Refund the slot on any Groq-side failure (the user
+        // didn't get a transcript).
+        await refundDailyCounter(env, tIp);
         if (groqRes.status === 429) {
           return new Response(JSON.stringify({
             error: 'ai_busy',
@@ -410,7 +444,7 @@ async function handleRequest(
             headers: { 'Content-Type': 'application/json', 'Retry-After': '60', ...corsHeaders },
           });
         }
-        console.error('Groq Whisper error:', groqRes.status, (await groqRes.text()).slice(0, 500));
+        console.error('Groq Whisper error status:', groqRes.status);
         return new Response(JSON.stringify({
           error: 'transcription_failed',
           message: 'Transcription service is having issues. Try again.',
@@ -421,27 +455,39 @@ async function handleRequest(
       }
 
       const data = await groqRes.json() as { text?: string };
-      // Successful transcribe — count against the shared daily quota.
-      await bumpDailyCounter(env, tIp, tCurrent);
       return new Response(JSON.stringify({ text: data.text ?? '' }), {
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
 
     // ── Route: /analyze ──────────────────────────────────────────
+    // Explicit path + method check. Without this, ANY POST to an
+    // unmatched path with a JSON body would fall through into the
+    // analyze logic and trigger a Groq call — widening the public
+    // attack surface and making abuse monitoring harder.
+    if (url.pathname !== '/analyze' || request.method !== 'POST') {
+      return new Response(JSON.stringify({ error: 'not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders },
+      });
+    }
 
     // ── Free-tier rate limit: 5 analyzes/day per IP ───────────────
     // Key format: `rl:{ip}:{YYYY-MM-DD}` → count string.
-    // TTL: 48h so stale buckets clean themselves up.
+    // TTL: 48h so stale day buckets clean themselves up.
     // Returns 429 with a friendly message when over quota.
     // Client-side localStorage gate exists too — this catches users who
-    // clear storage to bypass the limit. KV is eventually-consistent so
-    // a determined abuser could squeeze 1-2 extra requests in under
-    // heavy concurrent load; that's an acceptable tradeoff for a free tier.
+    // clear storage to bypass the limit.
     //
-    // IMPORTANT: the increment happens AFTER a successful Groq response
-    // (see bottom of this block). If Groq is down/overloaded, we don't
-    // burn the user's daily quota for a failure they didn't cause.
+    // ── Count BEFORE the Groq call (not after) ────────────────────
+    // Previously the counter was incremented only on success, so a
+    // malicious prompt that forces malformed JSON could burn Groq
+    // quota without ever consuming the user's daily slots. We now
+    // increment optimistically BEFORE the call and refund the slot
+    // only on infrastructure failures (Groq 5xx / network errors) —
+    // NOT on malformed model output (which is almost always either a
+    // prompt-injection attempt or a real model limitation, both of
+    // which legitimately consumed Groq resources).
     const ip = getClientIp(request);
     const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
     const rlKey = `rl:${ip}:${todayKey}`;
@@ -461,6 +507,11 @@ async function handleRequest(
         },
       });
     }
+
+    // Reserve the slot up-front. Still eventually-consistent on KV,
+    // but the expensive Groq call now happens AFTER the write — so a
+    // concurrent burst can't all observe the old count.
+    await bumpDailyCounter(env, ip, current);
 
     const body = await request.json() as { text?: string; timezoneOffset?: number; reminders?: { id: string; title: string }[] };
     const { text, timezoneOffset, reminders } = body;
@@ -588,9 +639,11 @@ Match the user's text to an existing reminder by KEYWORD in the title. E.g., "gy
 
       // ── Groq rate-limited (free tier 30 RPM shared globally) ───
       // Return a distinct error code so the client can show "AI is busy,
-      // try again in a minute" instead of looking broken. Do NOT burn
-      // the user's daily quota for this — they didn't get a result.
+      // try again in a minute" instead of looking broken. Refund the
+      // slot — this is an infrastructure capacity issue, not the user's
+      // fault, and they didn't get a result.
       if (groqRes.status === 429) {
+        await refundDailyCounter(env, ip);
         return new Response(JSON.stringify({
           error: 'ai_busy',
           message: 'AI is busy right now. Try again in a minute.',
@@ -601,11 +654,12 @@ Match the user's text to an existing reminder by KEYWORD in the title. E.g., "gy
       }
 
       if (!groqRes.ok) {
-        // Log full body server-side, return generic to client — error
-        // bodies from Groq can include our API key fragments or other
-        // internal info we don't want to leak.
+        // Other Groq error (5xx etc) — also refund. Log only the
+        // status + first 200 chars server-side; never log the raw
+        // request body or user-supplied text.
         const errBody = await groqRes.text();
-        console.error('Groq /analyze error:', groqRes.status, errBody.slice(0, 500));
+        console.error('Groq /analyze error:', groqRes.status, errBody.slice(0, 200));
+        await refundDailyCounter(env, ip);
         return new Response(JSON.stringify({
           error: 'ai_error',
           message: 'AI service is having issues. Try again.',
@@ -618,6 +672,8 @@ Match the user's text to an existing reminder by KEYWORD in the title. E.g., "gy
       const data = await groqRes.json() as { choices?: { message?: { content?: string } }[] };
       const content = data.choices?.[0]?.message?.content;
       if (!content) {
+        // Empty response — refund (Groq returned nothing usable).
+        await refundDailyCounter(env, ip);
         return new Response(JSON.stringify({
           error: 'ai_empty',
           message: 'AI returned an empty response. Try again.',
@@ -638,8 +694,14 @@ Match the user's text to an existing reminder by KEYWORD in the title. E.g., "gy
       try {
         result = JSON.parse(json);
       } catch {
-        // LLM produced malformed JSON. Don't leak the raw content back.
-        console.error('Groq returned malformed JSON:', json.slice(0, 500));
+        // Malformed JSON. Do NOT refund — the model was invoked and
+        // produced output, which consumed real Groq quota. Almost
+        // always this is either a prompt-injection attempt ("return
+        // invalid JSON") or a genuine model failure; both consumed
+        // Groq resources. Log a short hash only, never raw content
+        // (which may contain user PII).
+        const contentHash = await sha256Short(json);
+        console.error('Groq returned malformed JSON (hash=' + contentHash + ', len=' + json.length + ')');
         return new Response(JSON.stringify({
           error: 'ai_parse_error',
           message: 'AI response was malformed. Try again.',
@@ -649,11 +711,7 @@ Match the user's text to an existing reminder by KEYWORD in the title. E.g., "gy
         });
       }
 
-      // ── SUCCESS — now count this against the user's daily quota ──
-      // Only increment after we have a valid result. Failures (Groq
-      // errors, malformed JSON, empty responses) do NOT consume quota.
-      await bumpDailyCounter(env, ip, current);
-
+      // ── SUCCESS — slot was already reserved before the call ──
       return new Response(JSON.stringify(result), {
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
@@ -694,13 +752,38 @@ async function handleAdmin(
   env: Env,
   corsHeaders: Record<string, string>,
 ): Promise<Response> {
-  const jsonHeaders = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
+  // Security headers applied to ALL admin responses. The admin page
+  // shows waitlist emails, so we want defense-in-depth even though
+  // Cloudflare already terminates TLS and the page is Basic-Auth-gated.
+  const securityHeaders: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store',
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Content-Security-Policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+  };
 
   // Fail-closed: if secrets aren't set, refuse all access.
   if (!env.ADMIN_USER || !env.ADMIN_PASS) {
     return new Response(JSON.stringify({ error: 'admin not configured' }), {
       status: 500,
-      headers: jsonHeaders,
+      headers: securityHeaders,
+    });
+  }
+
+  // ── Brute-force rate limit: 10 failed attempts per IP per hour ──
+  // Without this, an attacker can hammer /admin with Basic Auth
+  // guesses. The admin password is the only barrier to the waitlist,
+  // so we add a per-IP failure lockout. Successful auth clears the
+  // counter. Key: `adm-rl:{ip}:{hour-bucket}`. TTL 2h.
+  const aIp = getClientIp(request);
+  const aHourKey = `adm-rl:${aIp}:${Math.floor(Date.now() / 3_600_000)}`;
+  const aFails = parseInt((await env.RATELIMIT.get(aHourKey)) ?? '0', 10);
+  if (aFails >= 10) {
+    return new Response(JSON.stringify({ error: 'too_many_attempts' }), {
+      status: 429,
+      headers: { ...securityHeaders, 'Retry-After': '3600' },
     });
   }
 
@@ -708,20 +791,23 @@ async function handleAdmin(
   const authHeader = request.headers.get('Authorization') ?? '';
   const match = authHeader.match(/^Basic\s+(.+)$/i);
   if (!match) {
-    return unauthorizedResponse();
+    await registerAdminFailure(env, aHourKey, aFails);
+    return unauthorizedResponse(securityHeaders);
   }
 
   let decoded: string;
   try {
     decoded = atob(match[1]);
   } catch {
-    return unauthorizedResponse();
+    await registerAdminFailure(env, aHourKey, aFails);
+    return unauthorizedResponse(securityHeaders);
   }
 
   // Decode is "user:pass". Use indexOf (not split) — passwords may contain ':'.
   const colonIdx = decoded.indexOf(':');
   if (colonIdx === -1) {
-    return unauthorizedResponse();
+    await registerAdminFailure(env, aHourKey, aFails);
+    return unauthorizedResponse(securityHeaders);
   }
   const user = decoded.slice(0, colonIdx);
   const pass = decoded.slice(colonIdx + 1);
@@ -729,8 +815,12 @@ async function handleAdmin(
   // Constant-time-ish comparison to avoid trivial timing attacks.
   // Not a true constant-time impl but better than `===` on attacker-controlled input.
   if (!timingSafeEqual(user, env.ADMIN_USER) || !timingSafeEqual(pass, env.ADMIN_PASS)) {
-    return unauthorizedResponse();
+    await registerAdminFailure(env, aHourKey, aFails);
+    return unauthorizedResponse(securityHeaders);
   }
+
+  // ── Successful auth: clear this IP's failure counter ──
+  try { await env.RATELIMIT.delete(aHourKey); } catch {}
 
   const url = new URL(request.url);
 
@@ -738,13 +828,21 @@ async function handleAdmin(
   // We bundle it here so deployment is single-file (no separate asset upload).
   if (url.pathname === '/admin' && request.method === 'GET') {
     return new Response(ADMIN_HTML, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'X-Frame-Options': 'DENY',
+        'Referrer-Policy': 'no-referrer',
+        // Strict CSP for the dashboard: no remote resources at all.
+        'Content-Security-Policy': "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+      },
     });
   }
 
   // GET /admin/health → simple auth check, no KV read.
   if (url.pathname === '/admin/health' && request.method === 'GET') {
-    return new Response(JSON.stringify({ ok: true }), { headers: jsonHeaders });
+    return new Response(JSON.stringify({ ok: true }), { headers: securityHeaders });
   }
 
   // GET /admin/waitlist → all entries from KV.
@@ -777,22 +875,39 @@ async function handleAdmin(
     });
 
     return new Response(JSON.stringify({ count: entries.length, entries }), {
-      headers: jsonHeaders,
+      headers: securityHeaders,
     });
   }
 
   return new Response(JSON.stringify({ error: 'not found' }), {
     status: 404,
-    headers: jsonHeaders,
+    headers: securityHeaders,
   });
 }
 
-function unauthorizedResponse(): Response {
+/** Increment the admin-auth failure counter for an IP/hour bucket. */
+async function registerAdminFailure(env: Env, hourKey: string, currentFails: number): Promise<void> {
+  try {
+    const next = currentFails + 1;
+    if (currentFails === 0) {
+      await env.RATELIMIT.put(hourKey, String(next), { expirationTtl: 7200 });
+    } else {
+      await env.RATELIMIT.put(hourKey, String(next));
+    }
+  } catch {
+    // Rate-limit failures shouldn't block the auth path.
+  }
+}
+
+function unauthorizedResponse(extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify({ error: 'unauthorized' }), {
     status: 401,
     headers: {
       'Content-Type': 'application/json',
       'WWW-Authenticate': 'Basic realm="monolog-admin"',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      ...extraHeaders,
     },
   });
 }
@@ -943,8 +1058,13 @@ const ADMIN_HTML = `<!DOCTYPE html>
       const data = await res.json();
       render(data.entries || []);
     } catch (e) {
+      // Use textContent instead of innerHTML for error rendering —
+      // e.message is browser-generated so it's safe, but textContent
+      // is the right pattern and removes any future XSS risk if the
+      // error source ever changes.
       const wrap = document.getElementById('table-wrap');
-      wrap.innerHTML = '<div class="err">failed to load: ' + (e.message || e) + '</div>';
+      wrap.textContent = 'failed to load: ' + (e.message || e);
+      wrap.className = 'err';
     }
   }
 
@@ -995,11 +1115,9 @@ const ADMIN_HTML = `<!DOCTYPE html>
     for (const e of entries) {
       const email = escapeHtml(e.email || '');
       const date = e.at ? new Date(e.at).toLocaleString() : '—';
-      const ua = escapeHtml(e.ua || '');
-      const ref = escapeHtml(e.ref || '');
-      rows += '<tr><td class="email">' + email + '</td><td class="date">' + date + '</td><td class="date">' + (ref || '—') + '</td><td class="ua">' + (ua || '—') + '</td></tr>';
+      rows += '<tr><td class="email">' + email + '</td><td class="date">' + date + '</td></tr>';
     }
-    wrap.innerHTML = '<table><thead><tr><th>email</th><th>signed up</th><th>ref</th><th>ua</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    wrap.innerHTML = '<table><thead><tr><th>email</th><th>signed up</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   function escapeHtml(s) {

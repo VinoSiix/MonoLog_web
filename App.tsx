@@ -113,9 +113,13 @@ function openWaitlist(): void {
 function WritePad({
   onReminderCreated,
   onNoteCreated,
+  onUpdateReminder,
+  onDeleteReminder,
 }: {
   onReminderCreated: () => void;
   onNoteCreated: () => void;
+  onUpdateReminder: (id: string, updates: Partial<Reminder>) => Promise<void>;
+  onDeleteReminder: (id: string) => Promise<void>;
 }) {
   const [draft, setDraft] = useState('');
   const [loading, setLoading] = useState(false);
@@ -541,6 +545,19 @@ function WritePad({
     if (action === 'create' && !result.reminder) action = 'none';
 
     try {
+      // Fresh read helper — used by modify/skip/delete so they always
+      // operate on the CURRENT state of stored reminders, not the
+      // snapshot taken at the top of send(). The AI may have created
+      // reminders in a previous turn that aren't in existingReminders.
+      const freshReminders = async (): Promise<Reminder[]> => {
+        try {
+          const raw = await AsyncStorage.getItem(REMINDERS_KEY);
+          return safeJsonParse<Reminder[]>(raw, []);
+        } catch {
+          return existingReminders;
+        }
+      };
+
       switch (action) {
         case 'create': {
           // ── New reminder ───────────────────────────────────────────
@@ -581,8 +598,11 @@ function WritePad({
 
         case 'modify': {
           // ── Modify an existing reminder ────────────────────────────
+          // Re-read fresh — existingReminders may be stale if an earlier
+          // turn created a reminder the AI should target here.
+          const liveReminders = await freshReminders();
           const targetTitle = result.targetReminderTitle?.toLowerCase() || result.title.toLowerCase();
-          const target = existingReminders.find((r) => r.title.toLowerCase().includes(targetTitle) || targetTitle.includes(r.title.toLowerCase()));
+          const target = liveReminders.find((r) => r.title.toLowerCase().includes(targetTitle) || targetTitle.includes(r.title.toLowerCase()));
           if (!target) {
             // Fall back to create if no match
             const fireAt = new Date(result.reminder?.datetime || result.modify?.datetime || new Date().toISOString());
@@ -640,7 +660,7 @@ function WritePad({
                 });
               }
             } catch {}
-            await updateReminder(target.id, {
+            await onUpdateReminder(target.id, {
               title: mod.title || target.title,
               fireAt: fireDate.toISOString(),
               recurring: newRecurring,
@@ -654,8 +674,9 @@ function WritePad({
 
         case 'skip': {
           // ── Skip one occurrence (today) of a recurring reminder ───
+          const liveReminders = await freshReminders();
           const skipTargetTitle = result.targetReminderTitle?.toLowerCase() || result.title.toLowerCase();
-          const skipTarget = existingReminders.find(
+          const skipTarget = liveReminders.find(
             (r) => r.title.toLowerCase().includes(skipTargetTitle) || skipTargetTitle.includes(r.title.toLowerCase()),
           );
           if (skipTarget) {
@@ -674,20 +695,21 @@ function WritePad({
                 });
               }
             } catch {}
-            await updateReminder(skipTarget.id, { skipDates, notificationId: notificationId || skipTarget.notificationId });
+            await onUpdateReminder(skipTarget.id, { skipDates, notificationId: notificationId || skipTarget.notificationId });
           }
           break;
         }
 
         case 'delete': {
           // ── Delete an existing reminder ────────────────────────────
+          const liveReminders = await freshReminders();
           const delTargetTitle = result.targetReminderTitle?.toLowerCase() || result.title.toLowerCase();
-          const delTarget = existingReminders.find(
+          const delTarget = liveReminders.find(
             (r) => r.title.toLowerCase().includes(delTargetTitle) || delTargetTitle.includes(r.title.toLowerCase()),
           );
           if (delTarget) {
             try { await cancelReminder(delTarget.notificationId); } catch {}
-            await deleteReminder(delTarget.id);
+            await onDeleteReminder(delTarget.id);
           }
           break;
         }
@@ -708,8 +730,13 @@ function WritePad({
           break;
         }
       }
-    } catch {
+    } catch (err) {
       // If anything goes wrong (e.g. storage failure), still finish saving
+      // so the UI doesn't freeze — but log so we can diagnose. We don't
+      // surface an Alert here because the user already saw the "Saving.."
+      // animation and the note was processed; the failure is silent to
+      // them, but we want a breadcrumb in devtools / Sentry.
+      console.error('[monolog] send() action dispatch failed:', err);
     }
 
     await finishSaving(saveStart);
@@ -991,11 +1018,6 @@ function RemindersPad({
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setNoteEditingId(null);
   };
-
-  // ── Date formatters ──────────────────────────────────────────
-  // (The inline date/time picker helpers — datePresets, timePresets,
-  //   isSameDay, fmtEditDate — were removed when the reminder edit card
-  //   lost its date picker. Title-only editing now.)
 
   const formatDate = (iso: string) => {
     const d = safeDate(iso);
@@ -1295,7 +1317,11 @@ function MonthView({
   onDeleteNote: (id: string) => void;
 }) {
   const today = useMemo(() => new Date(), []);
-  const todayStr = today.toISOString().split('T')[0];
+  // Use LOCAL date (not UTC) so calendar day-matching lines up with
+  // localDateStr() used elsewhere. Previously this used toISOString()
+  // which is UTC midnight — events near UTC midnight could render on
+  // the wrong calendar day for users in timezones far from UTC.
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   const [cursor, setCursor] = useState(() => new Date());
   const [selected, setSelected] = useState<string | null>(todayStr);
   const [calRemindersOpen, setCalRemindersOpen] = useState(true);
@@ -1432,7 +1458,11 @@ function MonthView({
           return rd.getDay() === d.getDay();
         }
         if (r.recurring === 'monthly') return rd.getDate() === d.getDate();
-        if (r.recurring === 'yearly') return rd.getMonth() === d.getMonth() && rd.getDate() === d.getDate();
+        // 'yearly' is in the AnalyzeResponse type for forward-compat
+        // but the worker's prompt never asks the model to produce it
+        // and the Reminder type doesn't include it — so we intentionally
+        // don't handle it here. Yearly reminders will just not show a
+        // dot until they actually fire.
         return false;
       }) ||
       notes.some((n) => localDateStr(new Date(n.createdAt)) === ds)
@@ -1466,8 +1496,6 @@ function MonthView({
           }
         } else if (r.recurring === 'monthly' && rd.getDate() === d.getDate()) {
           items.push({ id: r.id, title: r.title, meta: 'monthly' });
-        } else if (r.recurring === 'yearly' && rd.getMonth() === d.getMonth() && rd.getDate() === d.getDate()) {
-          items.push({ id: r.id, title: r.title, meta: 'yearly' });
         }
       }
     });
@@ -1837,7 +1865,12 @@ function AppInner({ tab, setTab }: { tab: 'write' | 'reminders' | 'calendar'; se
         ]}
       >
         {tab === 'write' ? (
-          <WritePad onReminderCreated={loadReminders} onNoteCreated={loadNotes} />
+          <WritePad
+            onReminderCreated={loadReminders}
+            onNoteCreated={loadNotes}
+            onUpdateReminder={updateReminder}
+            onDeleteReminder={deleteReminder}
+          />
         ) : tab === 'reminders' ? (
           <RemindersPad
             reminders={reminders}
