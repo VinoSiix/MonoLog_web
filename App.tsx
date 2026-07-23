@@ -434,7 +434,7 @@ function WritePad({
     const canSort = await canSortMore();
     if (!canSort) {
       Alert.alert(
-        "That's all 5 for today",
+        `That's all ${FREE_TIER_DAILY_LIMIT} for today`,
         `You've used all ${FREE_TIER_DAILY_LIMIT} free sorts. They reset at midnight.`,
         [{ text: 'OK' }],
       );
@@ -498,7 +498,7 @@ function WritePad({
           Animated.timing(savingFade, { toValue: 0, duration: 220, useNativeDriver: false }),
         ]).start();
         Alert.alert(
-          "That's all 5 for today",
+          `That's all ${FREE_TIER_DAILY_LIMIT} for today`,
           `You've used all ${FREE_TIER_DAILY_LIMIT} free sorts. They reset at midnight.`,
           [{ text: 'OK' }],
         );

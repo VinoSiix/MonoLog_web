@@ -93,9 +93,16 @@ function getClientIp(request: Request): string {
 }
 
 // ── Free-tier daily limit ───────────────────────────────────────
-// Shared across /analyze and /transcribe (5 combined AI calls/day per IP).
+// Shared across /analyze and /transcribe (10 combined AI calls/day per IP).
 // Defined once here so both routes reference the same source of truth.
-const FREE_TIER_DAILY_LIMIT_GLOBAL = 5;
+const FREE_TIER_DAILY_LIMIT_GLOBAL = 10;
+
+// ── Paid-tier daily limit ───────────────────────────────────────
+// Hard cap for paid accounts. Currently scaffolding — not enforced
+// until Stripe webhooks set a per-IP/account "paid" flag in KV. Once
+// wired up, the worker will check that flag and use this limit instead.
+// 100/day = ~3000/mo, plenty for any real user, caps abuse cost.
+const PAID_TIER_DAILY_LIMIT = 100;
 
 /** Increment the per-IP daily counter. No-op on storage failure. */
 async function bumpDailyCounter(env: Env, ip: string, current: number): Promise<void> {
@@ -331,7 +338,7 @@ async function handleRequest(
     if (url.pathname === '/transcribe') {
       // ── Per-IP daily cap on transcriptions ─────────────────────
       // Whisper is more expensive than /analyze (audio vs text) so we
-      // share the same 5/day free-tier bucket. Stops abuse where someone
+      // share the same 10/day free-tier bucket. Stops abuse where someone
       // uploads huge audio files to burn Groq credits.
       const tIp = getClientIp(request);
       const tTodayKey = new Date().toISOString().slice(0, 10);

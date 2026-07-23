@@ -4,7 +4,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  * Free-tier rate limit — matches the worker's FREE_TIER_DAILY_LIMIT.
  * Change in both places if you bump it.
  */
-export const FREE_TIER_DAILY_LIMIT = 5;
+export const FREE_TIER_DAILY_LIMIT = 10;
+
+/**
+ * Paid-tier daily cap. Scaffolding — not enforced client-side until
+ * the app knows the user is paid (post-Stripe). Mirrors the worker's
+ * PAID_TIER_DAILY_LIMIT.
+ */
+export const PAID_TIER_DAILY_LIMIT = 100;
 
 /**
  * Daily free-tier counter for AI sorts.
