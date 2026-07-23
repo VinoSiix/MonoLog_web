@@ -177,6 +177,7 @@ strong{color:#fff;font-weight:600}
    PITCH — 3 pillars
    ============================================================ */
 .grid{display:grid;gap:16px}
+.cols-4{grid-template-columns:repeat(4,1fr)}
 .cols-3{grid-template-columns:repeat(3,1fr)}
 .cols-2{grid-template-columns:repeat(2,1fr)}
 .card{
@@ -387,7 +388,7 @@ strong{color:#fff;font-weight:600}
 }
 .price-card:hover{box-shadow:0 14px 40px -22px rgba(0,0,0,.9)}
 .price-card.is-featured{border-color:var(--white)}
-/* Slightly smaller price font for 3-col layout so "$4.99" doesn't dominate */
+  /* Price font sized down a touch so "$19.99" doesn't dominate the 4-col layout */
 .price{
   font-family:var(--mono);font-weight:600;
   font-size:clamp(2.2rem,4.5vw,3.4rem);
@@ -471,12 +472,16 @@ strong{color:#fff;font-weight:600}
    · 400 compact phones · 360 tiny phones
    Mobile-first feel: tight hero, stacked phones, big targets.
    ============================================================ */
+@media (max-width:1040px){
+  .cols-4{grid-template-columns:repeat(2,1fr)}
+}
 @media (max-width:880px){
   .cols-3{grid-template-columns:1fr}
   .feat-grid{grid-template-columns:1fr}
 }
 @media (max-width:640px){
   .cols-2{grid-template-columns:1fr}
+  .cols-4{grid-template-columns:1fr}
 }
 
 /* ---------- MOBILE / TABLET (primary target: 375px, scales up to 800px) ---------- */
@@ -966,10 +971,10 @@ strong{color:#fff;font-weight:600}
 <!-- ===================== PRICING ===================== -->
 <section class="section wrap" id="pricing">
   <p class="eyebrow" data-reveal>Pricing</p>
-  <h2 class="title" data-reveal>Three plans. <span class="dim">No tricks.</span></h2>
+  <h2 class="title" data-reveal>Simple pricing. <span class="dim">No tricks.</span></h2>
   <p class="lead" data-reveal>No ads. No selling your data. Free forever if you want it. Pay a little, get more.</p>
 
-  <div class="grid cols-3" data-stagger data-reveal style="margin-top:36px">
+  <div class="grid cols-4" data-stagger data-reveal style="margin-top:36px">
 
     <!-- FREE — lead with it so X visitors don't bounce -->
     <div class="price-card">
@@ -984,29 +989,43 @@ strong{color:#fff;font-weight:600}
       </div>
     </div>
 
-    <!-- MONTHLY (featured — middle tier draws the eye) -->
-    <div class="price-card is-featured">
+    <!-- WEEKLY — lowest absolute price, draws the eye in -->
+    <div class="price-card">
       <span class="coming-soon-badge">Coming soon</span>
-      <p class="plan-name">Pro · Monthly</p>
+      <p class="plan-name">Pro · Weekly</p>
       <div class="price-block">
-        <p class="price">$4.99</p>
-        <p class="price-period">/ month</p>
+        <p class="price">$1.99</p>
+        <p class="price-period">/ week</p>
       </div>
-      <p class="benefit">Unlimited sorting. For people who think a lot.</p>
+      <p class="benefit">Unlimited sorting. Less than a coffee a week. Cancel anytime.</p>
       <div class="price-cta">
         <a class="btn-cta-soon" href="#waitlist">Notify me</a>
       </div>
     </div>
 
-    <!-- YEARLY — for believers, ~2 months free -->
+    <!-- MONTHLY — the standard -->
     <div class="price-card">
+      <span class="coming-soon-badge">Coming soon</span>
+      <p class="plan-name">Pro · Monthly</p>
+      <div class="price-block">
+        <p class="price">$3.99</p>
+        <p class="price-period">/ month</p>
+      </div>
+      <p class="benefit">Unlimited sorting. The sweet spot if you hate weekly charges.</p>
+      <div class="price-cta">
+        <a class="btn-cta-soon" href="#waitlist">Notify me</a>
+      </div>
+    </div>
+
+    <!-- YEARLY (featured — best value, where conversions land) -->
+    <div class="price-card is-featured">
       <span class="coming-soon-badge">Coming soon</span>
       <p class="plan-name">Pro · Yearly</p>
       <div class="price-block">
-        <p class="price">$49</p>
-        <p class="price-period">/ year · ~2 months free</p>
+        <p class="price">$19.99</p>
+        <p class="price-period">/ year · ~$0.38/week</p>
       </div>
-      <p class="benefit">Same Pro, cheaper if you're staying. For the long-haulers.</p>
+      <p class="benefit">Best value. Unlimited sorting at ~80% off the weekly price.</p>
       <div class="price-cta">
         <a class="btn-cta-soon" href="#waitlist">Notify me</a>
       </div>
