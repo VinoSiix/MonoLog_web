@@ -27,6 +27,7 @@ import {
   recordSort,
   syncFromServer,
   FREE_TIER_DAILY_LIMIT,
+  isUnlimited,
 } from './src/rateLimit';
 import {
   addNotificationResponseListener,
@@ -130,6 +131,9 @@ function WritePad({
   // refreshed after each successful /analyze. Shown as "x/5" next to
   // the send button so users always know where they stand.
   const [remaining, setRemaining] = useState(FREE_TIER_DAILY_LIMIT);
+  // Waitlist token holders get unlimited sorting (100/day). When true,
+  // we skip the local free-tier check and show "∞" instead of "x/10".
+  const [unlimited, setUnlimited] = useState(false);
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
   const processingRef = useRef(false);
   const buttonOpacity = useRef(new Animated.Value(1)).current;
@@ -293,8 +297,10 @@ function WritePad({
   }, [draft]);
 
   // Load remaining free-sort count on mount so the counter is accurate
-  // the moment the user lands on the write screen.
+  // the moment the user lands on the write screen. Also check if the
+  // user has a waitlist token (= unlimited).
   useEffect(() => {
+    isUnlimited().then(setUnlimited).catch(() => {});
     getRemainingToday().then(setRemaining).catch(() => {});
   }, []);
 
@@ -428,17 +434,19 @@ function WritePad({
     }
 
     // ── Free-tier pre-flight check ──────────────────────────────
-    // Short-circuits before the network round-trip if localStorage says
-    // the user is already over quota. The worker ALSO enforces this by
-    // IP (catches users who clear storage) — see RateLimitError catch below.
-    const canSort = await canSortMore();
-    if (!canSort) {
-      Alert.alert(
-        `That's all ${FREE_TIER_DAILY_LIMIT} for today`,
-        `You've used all ${FREE_TIER_DAILY_LIMIT} free sorts. They reset at midnight.`,
-        [{ text: 'OK' }],
-      );
-      return;
+    // Skip entirely for waitlist members (they have 100/day, effectively
+    // unlimited). For free users, short-circuits before the network
+    // round-trip if localStorage says they're already over quota.
+    if (!unlimited) {
+      const canSort = await canSortMore();
+      if (!canSort) {
+        Alert.alert(
+          `That's all ${FREE_TIER_DAILY_LIMIT} for today`,
+          `You've used all ${FREE_TIER_DAILY_LIMIT} free sorts. Join the waitlist for unlimited sorting until iOS launches.`,
+          [{ text: 'OK' }],
+        );
+        return;
+      }
     }
 
     // ── Start save animation ──────────────────────────────────
@@ -804,11 +812,11 @@ function WritePad({
       <View style={[styles.header, { paddingTop: 54 }]}>
           <Text style={styles.headerTitle}>write</Text>
           <View style={styles.headerRight}>
-            {/* Free-tier counter: shows remaining/5. Dims to almost-invisible
-                when at 0 so the user still has a visual hint without feeling
-                punished. */}
-            <Text style={[styles.counter, remaining === 0 && styles.counterEmpty]}>
-              {remaining}/{FREE_TIER_DAILY_LIMIT}
+            {/* Free-tier counter: shows remaining/10. Waitlist members
+                see "∞" instead. Dims to almost-invisible when at 0 so the
+                user still has a visual hint without feeling punished. */}
+            <Text style={[styles.counter, remaining === 0 && !unlimited && styles.counterEmpty]}>
+              {unlimited ? '∞' : `${remaining}/${FREE_TIER_DAILY_LIMIT}`}
             </Text>
             <Pressable
               onPress={send}

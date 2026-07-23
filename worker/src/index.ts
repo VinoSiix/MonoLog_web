@@ -104,10 +104,22 @@ const FREE_TIER_DAILY_LIMIT_GLOBAL = 10;
 // 100/day = ~3000/mo, plenty for any real user, caps abuse cost.
 const PAID_TIER_DAILY_LIMIT = 100;
 
+// ── Waitlist-promo daily limit ──────────────────────────────────
+// Join the waitlist → get unlimited sorting until iOS launches.
+// "Unlimited" = 100/day per token (effectively unlimited for a real
+// user, but caps abuse if a token gets shared online). Groq's global
+// 30 RPM is the real ceiling anyway.
+const WL_PROMO_DAILY_LIMIT = 100;
+
 /** Increment the per-IP daily counter. No-op on storage failure. */
 async function bumpDailyCounter(env: Env, ip: string, current: number): Promise<void> {
   const todayKey = new Date().toISOString().slice(0, 10);
   const rlKey = `rl:${ip}:${todayKey}`;
+  await bumpCounterKey(env, rlKey, current);
+}
+
+/** Increment an arbitrary rate-limit key. Sets 48h TTL on first use. */
+async function bumpCounterKey(env: Env, rlKey: string, current: number): Promise<void> {
   const next = current + 1;
   if (current === 0) {
     await env.RATELIMIT.put(rlKey, String(next), { expirationTtl: 60 * 60 * 48 });
@@ -134,12 +146,53 @@ async function refundDailyCounter(env: Env, ip: string): Promise<void> {
 }
 
 /**
+ * Refund one slot from the waitlist-token counter (same logic as
+ * refundDailyCounter but keyed on the token, not the IP).
+ */
+async function refundWlCounter(env: Env, token: string): Promise<void> {
+  try {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const rlKey = `rl-wl:${token}:${todayKey}`;
+    const raw = await env.RATELIMIT.get(rlKey);
+    const c = Math.max(0, (parseInt(raw ?? '0', 10)) - 1);
+    await env.RATELIMIT.put(rlKey, String(c));
+  } catch {
+    // Refund failure shouldn't crash the response path.
+  }
+}
+
+/**
  * Short hex digest for log fingerprinting without leaking raw content.
  * Used when logging malformed LLM output that may contain user PII.
  */
 async function sha256Short(input: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
   return Array.from(new Uint8Array(digest)).slice(0, 8).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Generate a random waitlist token (48 hex chars = 192 bits of entropy).
+ * Used to identify waitlist members on subsequent /analyze calls so they
+ * get the promo limit instead of the free-tier limit. Not a secret in
+ * the auth sense — it's just an abuse-resistant "I'm on the list" badge.
+ */
+function generateWlToken(): string {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Look up a waitlist token in KV. Returns true if the token exists
+ * (i.e. belongs to a real waitlist member). Tokens are stored under
+ * `wl:{token}` on signup. They never expire — the promo ends when iOS
+ * launches and we stop accepting new tokens, but existing ones keep
+ * working until accounts replace them.
+ */
+async function isValidWlToken(env: Env, token: string): Promise<boolean> {
+  if (!token || token.length !== 48) return false;
+  const val = await env.WAITLIST.get(`wl:${token}`);
+  return val !== null;
 }
 
 export default {
@@ -316,10 +369,7 @@ async function handleRequest(
       // the `already` flag; it shows a generic success either way.
       const existing = await env.WAITLIST.get(`email:${normalized}`);
       if (!existing) {
-        // Privacy minimization: store only email + timestamp. We
-        // previously stored UA + referrer too, but those weren't
-        // used for anything and broaden the PII surface if KV ever
-        // leaks. Easy to re-add later if analytics justify it.
+        // Privacy minimization: store only email + timestamp.
         await env.WAITLIST.put(
           `email:${normalized}`,
           JSON.stringify({
@@ -329,7 +379,17 @@ async function handleRequest(
         );
       }
 
-      return new Response(JSON.stringify({ ok: true }), {
+      // ── Generate a waitlist promo token ──────────────────────
+      // The client stores this and sends it with every /analyze call.
+      // If valid, the worker applies the promo limit (100/day) instead
+      // of the free-tier limit (10/day). Always generate a fresh token
+      // on each signup request — if someone re-submits the same email
+      // (new device, cleared storage) they get a new working token.
+      // Old tokens remain valid.
+      const wlToken = generateWlToken();
+      await env.WAITLIST.put(`wl:${wlToken}`, normalized, { expirationTtl: 60 * 60 * 24 * 365 });
+
+      return new Response(JSON.stringify({ ok: true, token: wlToken }), {
         headers: { 'Content-Type': 'application/json', ...corsHeaders },
       });
     }
@@ -338,17 +398,20 @@ async function handleRequest(
     if (url.pathname === '/transcribe') {
       // ── Per-IP daily cap on transcriptions ─────────────────────
       // Whisper is more expensive than /analyze (audio vs text) so we
-      // share the same 10/day free-tier bucket. Stops abuse where someone
-      // uploads huge audio files to burn Groq credits.
+      // share the same daily bucket. Waitlist token holders get the
+      // promo limit, same as /analyze.
       const tIp = getClientIp(request);
       const tTodayKey = new Date().toISOString().slice(0, 10);
-      const tRlKey = `rl:${tIp}:${tTodayKey}`;
+      const tWlToken = request.headers.get('X-WL-Token') ?? '';
+      const tHasWlToken = tWlToken ? await isValidWlToken(env, tWlToken) : false;
+      const tRlKey = tHasWlToken ? `rl-wl:${tWlToken}:${tTodayKey}` : `rl:${tIp}:${tTodayKey}`;
+      const tEffectiveLimit = tHasWlToken ? WL_PROMO_DAILY_LIMIT : FREE_TIER_DAILY_LIMIT_GLOBAL;
       const tCurrent = parseInt((await env.RATELIMIT.get(tRlKey)) ?? '0', 10);
-      if (tCurrent >= FREE_TIER_DAILY_LIMIT_GLOBAL) {
+      if (tCurrent >= tEffectiveLimit) {
         return new Response(JSON.stringify({
           error: 'rate_limited',
-          message: `That's all ${FREE_TIER_DAILY_LIMIT_GLOBAL} for today. Try again tomorrow.`,
-          limit: FREE_TIER_DAILY_LIMIT_GLOBAL,
+          message: `That's all ${tEffectiveLimit} for today. Try again tomorrow.`,
+          limit: tEffectiveLimit,
           used: tCurrent,
         }), {
           status: 429,
@@ -424,7 +487,11 @@ async function handleRequest(
 
       // Reserve the shared daily slot BEFORE the expensive Groq call
       // (same pattern as /analyze — refund on infra-side failure).
-      await bumpDailyCounter(env, tIp, tCurrent);
+      if (tHasWlToken) {
+        await bumpCounterKey(env, tRlKey, tCurrent);
+      } else {
+        await bumpDailyCounter(env, tIp, tCurrent);
+      }
 
       const groqForm = new FormData();
       groqForm.append('model', 'whisper-large-v3');
@@ -437,11 +504,8 @@ async function handleRequest(
       });
 
       if (!groqRes.ok) {
-        // Whisper also rate-limits on the shared Groq quota — surface as
-        // ai_busy so the client can retry gracefully instead of looking
-        // broken. Refund the slot on any Groq-side failure (the user
-        // didn't get a transcript).
-        await refundDailyCounter(env, tIp);
+        // Refund the slot on any Groq-side failure.
+        if (tHasWlToken) await refundWlCounter(env, tWlToken); else await refundDailyCounter(env, tIp);
         if (groqRes.status === 429) {
           return new Response(JSON.stringify({
             error: 'ai_busy',
@@ -495,15 +559,27 @@ async function handleRequest(
     // NOT on malformed model output (which is almost always either a
     // prompt-injection attempt or a real model limitation, both of
     // which legitimately consumed Groq resources).
+    // ── Rate limit: free 10/day, waitlist promo 100/day ─────────
+    // If the request carries a valid waitlist token (X-WL-Token header),
+    // use the promo limit instead of the free limit. The token is
+    // generated on /waitlist signup and stored client-side.
     const ip = getClientIp(request);
     const todayKey = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
-    const rlKey = `rl:${ip}:${todayKey}`;
+    const wlTokenRaw = request.headers.get('X-WL-Token') ?? '';
+    const hasWlToken = wlTokenRaw ? await isValidWlToken(env, wlTokenRaw) : false;
+
+    // Token holders get their OWN rate-limit key (per-token, not per-IP)
+    // so their promo doesn't collide with the IP-based free counter.
+    const rlKey = hasWlToken
+      ? `rl-wl:${wlTokenRaw}:${todayKey}`
+      : `rl:${ip}:${todayKey}`;
+    const effectiveLimit = hasWlToken ? WL_PROMO_DAILY_LIMIT : FREE_TIER_DAILY_LIMIT_GLOBAL;
     const current = parseInt((await env.RATELIMIT.get(rlKey)) ?? '0', 10);
-    if (current >= FREE_TIER_DAILY_LIMIT_GLOBAL) {
+    if (current >= effectiveLimit) {
       return new Response(JSON.stringify({
         error: 'rate_limited',
-        message: `That's all ${FREE_TIER_DAILY_LIMIT_GLOBAL} for today. Try again tomorrow.`,
-        limit: FREE_TIER_DAILY_LIMIT_GLOBAL,
+        message: `That's all ${effectiveLimit} for today. Try again tomorrow.`,
+        limit: effectiveLimit,
         used: current,
       }), {
         status: 429,
@@ -515,10 +591,13 @@ async function handleRequest(
       });
     }
 
-    // Reserve the slot up-front. Still eventually-consistent on KV,
-    // but the expensive Groq call now happens AFTER the write — so a
-    // concurrent burst can't all observe the old count.
-    await bumpDailyCounter(env, ip, current);
+    // Reserve the slot up-front. Token holders bump the token-keyed
+    // counter; free users bump the IP-keyed counter.
+    if (hasWlToken) {
+      await bumpCounterKey(env, rlKey, current);
+    } else {
+      await bumpDailyCounter(env, ip, current);
+    }
 
     const body = await request.json() as { text?: string; timezoneOffset?: number; reminders?: { id: string; title: string }[] };
     const { text, timezoneOffset, reminders } = body;
@@ -650,7 +729,7 @@ Match the user's text to an existing reminder by KEYWORD in the title. E.g., "gy
       // slot — this is an infrastructure capacity issue, not the user's
       // fault, and they didn't get a result.
       if (groqRes.status === 429) {
-        await refundDailyCounter(env, ip);
+        if (hasWlToken) await refundWlCounter(env, wlTokenRaw); else await refundDailyCounter(env, ip);
         return new Response(JSON.stringify({
           error: 'ai_busy',
           message: 'AI is busy right now. Try again in a minute.',
@@ -666,7 +745,7 @@ Match the user's text to an existing reminder by KEYWORD in the title. E.g., "gy
         // request body or user-supplied text.
         const errBody = await groqRes.text();
         console.error('Groq /analyze error:', groqRes.status, errBody.slice(0, 200));
-        await refundDailyCounter(env, ip);
+        if (hasWlToken) await refundWlCounter(env, wlTokenRaw); else await refundDailyCounter(env, ip);
         return new Response(JSON.stringify({
           error: 'ai_error',
           message: 'AI service is having issues. Try again.',
@@ -680,7 +759,7 @@ Match the user's text to an existing reminder by KEYWORD in the title. E.g., "gy
       const content = data.choices?.[0]?.message?.content;
       if (!content) {
         // Empty response — refund (Groq returned nothing usable).
-        await refundDailyCounter(env, ip);
+        if (hasWlToken) await refundWlCounter(env, wlTokenRaw); else await refundDailyCounter(env, ip);
         return new Response(JSON.stringify({
           error: 'ai_empty',
           message: 'AI returned an empty response. Try again.',

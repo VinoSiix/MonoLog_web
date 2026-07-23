@@ -1036,9 +1036,9 @@ strong{color:#fff;font-weight:600}
 
 <!-- ===================== WAITLIST ===================== -->
 <section class="section wrap" id="waitlist" style="text-align:center">
-  <p class="eyebrow" data-reveal style="justify-content:center">iOS is coming</p>
-  <h2 class="title" data-reveal>Get Monolog. <span class="dim">First.</span></h2>
-  <p class="lead" data-reveal style="margin:6px auto 0;max-width:62ch">Drop your email — we'll ping you the moment iOS launches and the moment paid plans go live. No spam, no newsletter, just the one ping.</p>
+  <p class="eyebrow" data-reveal style="justify-content:center">Limited time</p>
+  <h2 class="title" data-reveal>Join the waitlist. <span class="dim">Get unlimited.</span></h2>
+  <p class="lead" data-reveal style="margin:6px auto 0;max-width:62ch">Drop your email and get <strong>unlimited AI sorting</strong> right now — no daily cap, no credit card. It's our thank-you for being early. This lasts until the iOS app launches, then paid plans take over.</p>
 
   <form class="wl-row" id="wl-form" autocomplete="on" novalidate data-reveal style="margin:30px auto 0;max-width:520px">
     <input
@@ -1206,9 +1206,13 @@ strong{color:#fff;font-weight:600}
         .then(function(r){ return r.json().then(function(d){ return {ok: r.ok, data: d}; }); })
         .then(function(out){
           if(out.ok && out.data && out.data.ok){
-            wlStatus.textContent = out.data.already
-              ? "you're already on the list — talk soon"
-              : "you're on the list — talk soon";
+            // Store the waitlist token so the app gives unlimited sorting.
+            // localStorage is shared between the landing page (/) and the
+            // app (/app/) since they're the same origin.
+            if(out.data.token){
+              try { localStorage.setItem('monolog.wl.token', out.data.token); } catch(e) {}
+            }
+            wlStatus.textContent = "you're on the list — unlimited sorting unlocked. open the app and start writing.";
             wlStatus.className = 'wl-status ok';
             wlBtn.textContent = 'See you soon';
             wlForm.email.value = '';

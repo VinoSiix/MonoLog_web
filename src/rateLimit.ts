@@ -13,6 +13,36 @@ export const FREE_TIER_DAILY_LIMIT = 10;
  */
 export const PAID_TIER_DAILY_LIMIT = 100;
 
+// ── Waitlist promo token ─────────────────────────────────────────
+// When a user joins the waitlist, the worker returns a token. The
+// client stores it here and sends it with every /analyze request.
+// Token holders get 100/day instead of 10/day — effectively unlimited
+// until the iOS app launches and paid tiers take over.
+const WL_TOKEN_KEY = 'monolog.wl.token';
+
+/** Returns the stored waitlist token, or null if the user hasn't joined. */
+export async function getWlToken(): Promise<string | null> {
+  try {
+    return await AsyncStorage.getItem(WL_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Stores the waitlist token returned by /waitlist. */
+export async function setWlToken(token: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(WL_TOKEN_KEY, token);
+  } catch {
+    // Storage failure shouldn't block the user.
+  }
+}
+
+/** Returns true if the user has a waitlist token (= unlimited sorting). */
+export async function isUnlimited(): Promise<boolean> {
+  return (await getWlToken()) !== null;
+}
+
 /**
  * Daily free-tier counter for AI sorts.
  * Stored in AsyncStorage as a tiny JSON blob: { date, used }.

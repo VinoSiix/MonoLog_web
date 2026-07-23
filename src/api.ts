@@ -1,4 +1,18 @@
 import type { AnalyzeResponse, Reminder } from './types';
+import { getWlToken } from './rateLimit';
+
+/**
+ * Build headers for a request, including the waitlist token if one
+ * exists. Token holders get 100/day instead of 10/day.
+ */
+async function buildHeaders(extra?: Record<string, string>): Promise<Record<string, string>> {
+  const headers: Record<string, string> = { ...extra };
+  const token = await getWlToken();
+  if (token) {
+    headers['X-WL-Token'] = token;
+  }
+  return headers;
+}
 
 /**
  * Backend URL for the Monolog Cloudflare Worker.
@@ -149,7 +163,7 @@ export async function analyzeNote(
 
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: await buildHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ text, timezoneOffset, reminders }),
   });
 
@@ -218,6 +232,7 @@ export async function transcribeAudio(
   try {
     res = await fetch(url, {
       method: 'POST',
+      headers: await buildHeaders(),
       body: formData,
     });
   } catch (e: any) {
